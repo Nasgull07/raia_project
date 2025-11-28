@@ -61,7 +61,7 @@ def cargar_modelo():
     
     # Cargar mapping
     label_mapping = {}
-    with open(mapping_path, 'r') as f:
+    with open(mapping_path, 'r', encoding='utf-8') as f:
         for line in f:
             label, letter = line.strip().split()
             label_mapping[int(label)] = letter
@@ -147,7 +147,7 @@ def main():
         model, scaler, label_mapping = cargar_modelo()
     
     # Tabs para diferentes modos
-    tab1, tab2 = st.tabs(["📝 Escribir Texto", "📷 Subir Imagen"])
+    tab1, tab2, tab3 = st.tabs(["📝 Escribir Texto", "📷 Subir Imagen", "📁 Explorador de Archivos"])
     
     # Tab 1: Escribir texto
     with tab1:
@@ -169,15 +169,18 @@ def main():
         if st.button("🔍 Generar y Reconocer", type="primary"):
             if not texto_input:
                 st.warning("⚠️ Escribe algo primero")
-            elif not texto_input.replace(' ', '').isalpha():
-                st.warning("⚠️ Solo se permiten letras (A-Z, a-z)")
             else:
-                # Generar imagen
-                img = generar_imagen_texto(texto_input, font_size)
-                img_array = np.array(img)
-                
-                # Mostrar imagen generada
-                st.markdown("#### 🖼️ Imagen Generada:")
+                # Validar que solo haya letras, acentos y signos permitidos
+                import re
+                texto_validado = texto_input
+                if not re.fullmatch(r'[A-Za-zÁÉÍÓÚáéíóúÑñÜü,.;:!?¿¡ ]+', texto_validado):
+                    st.warning("⚠️ Solo se permiten letras, acentos, espacios y signos de puntuación (,.;:!?¿¡)")
+                else:
+                    # Generar imagen
+                    img = generar_imagen_texto(texto_input, font_size)
+                    img_array = np.array(img)
+                    # Mostrar imagen generada
+                    st.markdown("#### 🖼️ Imagen Generada:")
                 st.image(img, use_container_width=False)
                 
                 # Reconocer
@@ -193,17 +196,29 @@ def main():
                     st.markdown("---")
                     st.markdown("### 📊 Resultados")
                     
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.metric("Texto Original", texto_input.replace(' ', ''))
+                        st.markdown("**📝 Texto Original:**")
+                        st.text_area(
+                            "Original",
+                            texto_input.replace(' ', ''),
+                            height=100,
+                            label_visibility="collapsed"
+                        )
                     
                     with col2:
-                        st.metric("Texto Reconocido", texto_reconocido)
+                        st.markdown("**✅ Texto Reconocido:**")
+                        st.text_area(
+                            "Reconocido",
+                            texto_reconocido,
+                            height=100,
+                            label_visibility="collapsed"
+                        )
                     
-                    with col3:
-                        confianza_promedio = np.mean(confidencias)
-                        st.metric("Confianza Promedio", f"{confianza_promedio*100:.1f}%")
+                    # Confianza promedio
+                    confianza_promedio = np.mean(confidencias)
+                    st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
                     
                     # Verificar si es correcto
                     es_correcto = texto_input.replace(' ', '') == texto_reconocido
@@ -214,11 +229,17 @@ def main():
                     
                     # Mostrar letras individuales
                     st.markdown("#### 🔤 Letras Detectadas:")
-                    cols = st.columns(min(len(letras_imgs), 10))
-                    for i, (letra_img, letra, conf) in enumerate(zip(letras_imgs, texto_reconocido, confidencias)):
-                        if i < len(cols):
-                            with cols[i]:
-                                st.image(letra_img, caption=f"{letra}\n{conf*100:.0f}%", width=50)
+                    st.markdown(f"**Total de letras reconocidas: {len(texto_reconocido)}**")
+                    
+                    # Mostrar todas las letras en filas de 10
+                    num_letras = len(letras_imgs)
+                    for fila in range(0, num_letras, 10):
+                        cols = st.columns(min(10, num_letras - fila))
+                        for i, col in enumerate(cols):
+                            idx = fila + i
+                            if idx < num_letras:
+                                with col:
+                                    st.image(letras_imgs[idx], caption=f"{texto_reconocido[idx]}\n{confidencias[idx]*100:.0f}%", width=50)
     
     # Tab 2: Subir imagen
     with tab2:
@@ -253,27 +274,123 @@ def main():
                     st.markdown("---")
                     st.markdown("### 📊 Resultados")
                     
-                    col1, col2 = st.columns(2)
+                    col1, col2 = st.columns([3, 1])
                     
                     with col1:
-                        st.metric("Texto Reconocido", texto_reconocido)
+                        st.markdown("**✅ Texto Reconocido:**")
+                        st.text_area(
+                            "Reconocido",
+                            texto_reconocido,
+                            height=100,
+                            label_visibility="collapsed"
+                        )
                     
                     with col2:
                         confianza_promedio = np.mean(confidencias)
-                        st.metric("Confianza Promedio", f"{confianza_promedio*100:.1f}%")
+                        st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
                     
                     # Mostrar letras individuales
                     st.markdown("#### 🔤 Letras Detectadas:")
-                    cols = st.columns(min(len(letras_imgs), 10))
-                    for i, (letra_img, letra, conf) in enumerate(zip(letras_imgs, texto_reconocido, confidencias)):
-                        if i < len(cols):
-                            with cols[i]:
-                                st.image(letra_img, caption=f"{letra}\n{conf*100:.0f}%", width=50)
+                    st.markdown(f"**Total de letras reconocidas: {len(texto_reconocido)}**")
+                    
+                    # Mostrar todas las letras en filas de 10
+                    num_letras = len(letras_imgs)
+                    for fila in range(0, num_letras, 10):
+                        cols = st.columns(min(10, num_letras - fila))
+                        for i, col in enumerate(cols):
+                            idx = fila + i
+                            if idx < num_letras:
+                                with col:
+                                    st.image(letras_imgs[idx], caption=f"{texto_reconocido[idx]}\n{confidencias[idx]*100:.0f}%", width=50)
                     
                     # Detalles de cada letra
                     with st.expander("📋 Detalles de cada letra"):
                         for i, (letra, conf) in enumerate(zip(texto_reconocido, confidencias)):
                             st.write(f"**Letra {i+1}:** `{letra}` - Confianza: **{conf*100:.1f}%**")
+    
+    # Tab 3: Explorador de archivos
+    with tab3:
+        st.markdown("### Selecciona una imagen desde el explorador de archivos")
+        
+        # Input para la ruta del archivo
+        file_path_input = st.text_input(
+            "Ruta completa de la imagen:",
+            placeholder=r"C:\ruta\a\tu\imagen.png",
+            help="Ingresa la ruta completa del archivo de imagen"
+        )
+        
+        # Botón para examinar (instrucciones)
+        st.info("💡 **Consejo**: Copia y pega la ruta completa de tu imagen desde el explorador de Windows")
+        
+        if file_path_input:
+            # Verificar que el archivo existe
+            file_path = Path(file_path_input)
+            
+            if not file_path.exists():
+                st.error(f"❌ El archivo no existe: {file_path_input}")
+            elif file_path.suffix.lower() not in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']:
+                st.error("❌ Formato no soportado. Use: PNG, JPG, JPEG, BMP o GIF")
+            else:
+                try:
+                    # Cargar imagen
+                    img = Image.open(file_path).convert('L')
+                    img_array = np.array(img)
+                    
+                    # Mostrar imagen
+                    st.markdown("#### 🖼️ Imagen Cargada:")
+                    st.image(img, use_container_width=False)
+                    st.success(f"✅ Imagen cargada: {file_path.name}")
+                    
+                    # Reconocer
+                    if st.button("🔍 Reconocer Texto", type="primary", key="btn_file"):
+                        with st.spinner("Reconociendo..."):
+                            texto_reconocido, confidencias, letras_imgs = reconocer_texto(
+                                img_array, model, scaler, label_mapping
+                            )
+                        
+                        if texto_reconocido is None:
+                            st.error("❌ No se pudieron detectar letras")
+                        else:
+                            # Resultados
+                            st.markdown("---")
+                            st.markdown("### 📊 Resultados")
+                            
+                            col1, col2 = st.columns([3, 1])
+                            
+                            with col1:
+                                st.markdown("**✅ Texto Reconocido:**")
+                                st.text_area(
+                                    "Reconocido",
+                                    texto_reconocido,
+                                    height=100,
+                                    label_visibility="collapsed"
+                                )
+                            
+                            with col2:
+                                confianza_promedio = np.mean(confidencias)
+                                st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
+                            
+                            # Mostrar letras individuales
+                            st.markdown("#### 🔤 Letras Detectadas:")
+                            st.markdown(f"**Total de letras reconocidas: {len(texto_reconocido)}**")
+                            
+                            # Mostrar todas las letras en filas de 10
+                            num_letras = len(letras_imgs)
+                            for fila in range(0, num_letras, 10):
+                                cols = st.columns(min(10, num_letras - fila))
+                                for i, col in enumerate(cols):
+                                    idx = fila + i
+                                    if idx < num_letras:
+                                        with col:
+                                            st.image(letras_imgs[idx], caption=f"{texto_reconocido[idx]}\n{confidencias[idx]*100:.0f}%", width=50)
+                            
+                            # Detalles de cada letra
+                            with st.expander("📋 Detalles de cada letra"):
+                                for i, (letra, conf) in enumerate(zip(texto_reconocido, confidencias)):
+                                    st.write(f"**Letra {i+1}:** `{letra}` - Confianza: **{conf*100:.1f}%**")
+                
+                except Exception as e:
+                    st.error(f"❌ Error al cargar la imagen: {str(e)}")
     
     # Sidebar con información
     with st.sidebar:
