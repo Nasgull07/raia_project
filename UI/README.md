@@ -6,12 +6,7 @@ Interfaz gráfica para probar el modelo OCR.
 
 ```bash
 cd UI
-streamlit run app.py
-```
-
-O desde la raíz del proyecto:
-```bash
-streamlit run UI/app.py
+pythhon -m streamlit run app.py
 ```
 
 ## 📋 Requisitos Adicionales

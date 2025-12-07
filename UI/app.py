@@ -13,20 +13,20 @@ from langdetect import detect, DetectorFactory
 
 # Añadir directorio raíz del proyecto al path
 project_root = Path(__file__).resolve().parent.parent
-utils_path = project_root / "utils"
+segmenter_path = project_root / "modelo" / "fase3_evaluacion"
 
 # Debug: verificar que los paths existen
-if not utils_path.exists():
-    raise ImportError(f"Utils directory not found at: {utils_path}")
+if not segmenter_path.exists():
+    raise ImportError(f"Segmenter directory not found at: {segmenter_path}")
 
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(utils_path))
+sys.path.insert(0, str(segmenter_path))
 
 # Importar usando importlib para mejor control
 import importlib.util
 spec = importlib.util.spec_from_file_location(
     "simple_segmenter", 
-    str(utils_path / "simple_segmenter.py")
+    str(segmenter_path / "simple_segmenter.py")
 )
 simple_segmenter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(simple_segmenter)
@@ -167,6 +167,157 @@ def main():
     # Título
     st.title("🔤 OCR - Reconocedor de Texto")
     st.markdown("### Prueba el modelo de reconocimiento de texto")
+    
+    # Verificar si el modelo existe
+    model_path = MODELS_DIR / "modelo.pkl"
+    
+    # Panel de utilidades al inicio
+    if not model_path.exists():
+        st.warning("⚠️ Modelo no encontrado. Necesitas configurar el proyecto.")
+        
+        st.markdown("### 🛠️ Configuración Inicial del Proyecto")
+        st.info("""
+        Este proceso ejecutará automáticamente:
+        1. **Generar imágenes** sintéticas de caracteres (200 para difíciles, 50 para resto)
+        2. **Procesar dataset** y crear archivos CSV de entrenamiento
+        3. **Entrenar modelo** SVM con los datos generados
+        
+        ⏱️ Tiempo estimado: 3-5 minutos
+        """)
+        
+        if st.button("🚀 Configurar Proyecto Completo", type="primary", use_container_width=True):
+            import subprocess
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            log_expander = st.expander("📋 Ver logs detallados", expanded=True)
+            
+            try:
+                # Paso 1: Generar imágenes
+                status_text.text("🎨 Paso 1/3: Generando imágenes...")
+                progress_bar.progress(10)
+                
+                fase1_dir = project_root / "modelo" / "fase1_dataset"
+                with log_expander:
+                    st.markdown("#### 🎨 Generando Imágenes")
+                    result1 = subprocess.run(
+                        ["python", "generar_con_puntuacion.py"],
+                        cwd=str(fase1_dir),
+                        capture_output=True,
+                        text=True
+                    )
+                    st.code(result1.stdout[-1000:] if len(result1.stdout) > 1000 else result1.stdout, language="text")
+                    
+                    if result1.returncode != 0:
+                        st.error(f"❌ Error:\n{result1.stderr}")
+                        st.stop()
+                
+                progress_bar.progress(40)
+                
+                # Paso 2: Generar dataset
+                status_text.text("📊 Paso 2/3: Generando dataset...")
+                
+                with log_expander:
+                    st.markdown("#### 📊 Generando Dataset")
+                    result2 = subprocess.run(
+                        ["python", "generar_dataset.py"],
+                        cwd=str(fase1_dir),
+                        capture_output=True,
+                        text=True
+                    )
+                    st.code(result2.stdout[-1000:] if len(result2.stdout) > 1000 else result2.stdout, language="text")
+                    
+                    if result2.returncode != 0:
+                        st.error(f"❌ Error:\n{result2.stderr}")
+                        st.stop()
+                
+                progress_bar.progress(70)
+                
+                # Paso 3: Entrenar modelo
+                status_text.text("🤖 Paso 3/3: Entrenando modelo...")
+                
+                fase2_dir = project_root / "modelo" / "fase2_entrenamiento"
+                with log_expander:
+                    st.markdown("#### 🤖 Entrenando Modelo")
+                    result3 = subprocess.run(
+                        ["python", "entrenar_modelo.py"],
+                        cwd=str(fase2_dir),
+                        capture_output=True,
+                        text=True
+                    )
+                    st.code(result3.stdout, language="text")
+                    
+                    if result3.returncode != 0:
+                        st.error(f"❌ Error:\n{result3.stderr}")
+                        st.stop()
+                
+                progress_bar.progress(100)
+                status_text.text("✅ Configuración completada!")
+                
+                st.success("🎉 ¡Proyecto configurado exitosamente!")
+                st.balloons()
+                st.info("🔄 **Recarga la página** para comenzar a usar el modelo")
+                
+            except Exception as e:
+                st.error(f"❌ Error inesperado: {str(e)}")
+        
+        st.markdown("---")
+        st.markdown("### 📝 Pasos Manuales (Opcional)")
+        
+        with st.expander("⚙️ Ejecutar pasos individuales"):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("🎨 Solo Imágenes", use_container_width=True):
+                    with st.spinner("Generando..."):
+                        import subprocess
+                        fase1_dir = project_root / "modelo" / "fase1_dataset"
+                        result = subprocess.run(
+                            ["python", "generar_con_puntuacion.py"],
+                            cwd=str(fase1_dir),
+                            capture_output=True,
+                            text=True
+                        )
+                        if result.returncode == 0:
+                            st.success("✅ Imágenes generadas")
+                        else:
+                            st.error(f"❌ Error:\n{result.stderr}")
+            
+            with col2:
+                if st.button("📊 Solo Dataset", use_container_width=True):
+                    with st.spinner("Procesando..."):
+                        import subprocess
+                        fase1_dir = project_root / "modelo" / "fase1_dataset"
+                        result = subprocess.run(
+                            ["python", "generar_dataset.py"],
+                            cwd=str(fase1_dir),
+                            capture_output=True,
+                            text=True
+                        )
+                        if result.returncode == 0:
+                            st.success("✅ Dataset generado")
+                        else:
+                            st.error(f"❌ Error:\n{result.stderr}")
+            
+            with col3:
+                if st.button("🤖 Solo Entrenar", use_container_width=True):
+                    with st.spinner("Entrenando..."):
+                        import subprocess
+                        fase2_dir = project_root / "modelo" / "fase2_entrenamiento"
+                        result = subprocess.run(
+                            ["python", "entrenar_modelo.py"],
+                            cwd=str(fase2_dir),
+                            capture_output=True,
+                            text=True
+                        )
+                        if result.returncode == 0:
+                            st.success("✅ Modelo entrenado")
+                            st.info("🔄 Recarga la página")
+                        else:
+                            st.error(f"❌ Error:\n{result.stderr}")
+        
+        st.stop()
+    
     st.markdown("---")
     
     # Cargar modelo
@@ -197,11 +348,12 @@ def main():
             if not texto_input:
                 st.warning("⚠️ Escribe algo primero")
             else:
-                # Validar que solo haya letras, acentos y signos permitidos
+                # Validar que solo haya letras, acentos y signos permitidos (Español, Catalán, Inglés)
                 import re
                 texto_validado = texto_input
-                if not re.fullmatch(r'[A-Za-zÁÉÍÓÚáéíóúÀÈÌÒÙàèìòùÑñÜü,.;:!?¿¡ ]+', texto_validado):
-                    st.warning("⚠️ Solo se permiten letras, acentos, espacios y signos de puntuación (,.;:!?¿¡)")
+                # Incluye: letras básicas, acentos agudos/graves, diéresis, ñ, ç, apóstrofe, puntuación
+                if not re.fullmatch(r"[A-Za-zÁÉÍÓÚáéíóúÀÈÌÒÙàèìòùÏÜïüÇçÑñ',.;:!?¿¡\- ]+", texto_validado):
+                    st.warning("⚠️ Solo se permiten letras, acentos, apóstrofe, espacios y signos de puntuación")
                 else:
                     # Generar imagen
                     img = generar_imagen_texto(texto_input, font_size)
@@ -418,22 +570,35 @@ def main():
     
     # Sidebar con información
     with st.sidebar:
-        st.markdown("### ℹ️ Información")
+        st.markdown("### ℹ️ Información del Modelo")
         st.markdown("""
         Este modelo OCR reconoce:
-        - **52 clases**: A-Z, a-z
-        - **Precisión**: ~99%
-        - **Letras individuales**: 28x28 píxeles
+        - **91 clases de caracteres**
+        - **Español**: A-Z, a-z, áéíóú, ñ, ü, puntuación
+        - **Catalán**: àèò, ï, ç
+        - **Inglés**: apóstrofe (')
+        - **Precisión**: ~96%
+        - **Resolución**: 28x28 píxeles
         
         ### 📝 Consejos
         - Usa texto negro sobre fondo blanco
-        - Evita fuentes muy decorativas
+        - Fuente clara y legible
         - El texto debe estar horizontal
+        - Evita letras muy juntas
+        
+        ### ⚠️ Limitaciones
+        - Dificultad para diferenciar I/l en algunas fuentes
+        - Mejor rendimiento con Arial, Times, Calibri
         """)
         
         st.markdown("---")
-        st.markdown("### 📊 Estadísticas del Modelo")
-        st.info(f"**Clases**: {len(label_mapping)}\n\n**Modelo**: SVM Linear")
+        st.markdown("### 📊 Estadísticas")
+        st.info(f"**Clases**: {len(label_mapping)}\n**Modelo**: SVM Linear\n**Idiomas**: ES, CA, EN")
+        
+        st.markdown("---")
+        st.markdown("### 🛠️ Utilidades")
+        if st.button("🔄 Reentrenar Modelo", use_container_width=True):
+            st.info("Para reentrenar, ejecuta en terminal:\n\n1. `cd modelo/fase1_dataset`\n2. `python generar_con_puntuacion.py`\n3. `python generar_dataset.py`\n4. `cd ../fase2_entrenamiento`\n5. `python entrenar_modelo.py`")
 
 if __name__ == "__main__":
     main()
