@@ -203,11 +203,28 @@ if __name__ == "__main__":
     # Determinar host según el argumento
     if args.global_access:
         import socket
+        import platform
+        
+        # Obtener todas las IPs de red (filtrar WSL/Hyper-V/Loopback)
         hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
+        
+        # Obtener IP real de la red local
+        try:
+            # Conectar a un servidor externo para obtener la IP de red activa
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except:
+            # Fallback al método antiguo
+            local_ip = socket.gethostbyname(hostname)
+        
         print(f"🌐 Ejecutando en red local")
         print(f"   - Acceso local: http://localhost:8000")
         print(f"   - Acceso en red: http://{local_ip}:8000")
+        print(f"\n⚠️  Asegúrate de que el firewall permita conexiones en el puerto 8000")
+        if platform.system() == "Windows":
+            print(f"   Ejecuta como Admin: netsh advfirewall firewall add rule name=\"FastAPI OCR\" dir=in action=allow protocol=TCP localport=8000")
         host = "0.0.0.0"
     else:
         print(f"🏠 Ejecutando en modo local")

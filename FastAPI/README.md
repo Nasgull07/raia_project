@@ -13,11 +13,29 @@ pip install -r requirements.txt
 
 ### 2. Iniciar el servidor
 
+**Modo local (solo este PC):**
 ```bash
-uvicorn main:app --reload
+python main.py
+```
+Acceso: `http://localhost:8000`
+
+**Modo red local (compartir con otros dispositivos):**
+```bash
+python main.py -g
+```
+Mostrará la IP para acceder desde otros dispositivos, ej: `http://192.168.1.217:8000`
+
+### 3. Configurar firewall (solo para `-g`)
+
+**Windows (cmd como Administrador):**
+```cmd
+netsh advfirewall firewall add rule name="FastAPI OCR Server" dir=in action=allow protocol=TCP localport=8000
 ```
 
-El servidor estará disponible en: `http://localhost:8000`
+**Para cerrar el puerto:**
+```cmd
+netsh advfirewall firewall delete rule name="FastAPI OCR Server"
+```
 
 ## 📚 Endpoints
 
@@ -44,7 +62,7 @@ Verifica el estado de la API y si el modelo está cargado.
 }
 ```
 
-### POST `/reconocer`
+### POST `/upload-image/`
 Reconoce texto de una imagen.
 
 **Parámetros:**
@@ -53,6 +71,8 @@ Reconoce texto de una imagen.
 **Respuesta:**
 ```json
 {
+  "filename": "imagen.png",
+  "size": 12345,
   "texto": "Hola mundo",
   "confianza_promedio": 0.95,
   "letras": ["H", "o", "l", "a", "ESPACIO", "m", "u", "n", "d", "o"],
@@ -65,7 +85,7 @@ Reconoce texto de una imagen.
 ### Usando curl:
 
 ```bash
-curl -X POST "http://localhost:8000/reconocer" \
+curl -X POST "http://localhost:8000/upload-image/" \
   -F "file=@imagen.png"
 ```
 
@@ -74,11 +94,15 @@ curl -X POST "http://localhost:8000/reconocer" \
 ```python
 import requests
 
-url = "http://localhost:8000/reconocer"
+url = "http://localhost:8000/upload-image/"
 files = {'file': open('imagen.png', 'rb')}
 response = requests.post(url, files=files)
 print(response.json())
 ```
+
+### Documentación interactiva:
+
+Accede a `http://localhost:8000/docs` para ver Swagger UI automático.
 
 ## 📁 Estructura
 
@@ -91,13 +115,24 @@ FastAPI/
 
 **Nota**: Los modelos se cargan desde la carpeta `../models/` en la raíz del proyecto.
 
+## 🌐 Uso en Red Local
+
+1. **PC con la API** ejecuta: `python main.py -g`
+2. Copia la IP mostrada (ej: `192.168.1.217`)
+3. Abre el puerto 8000 en el firewall (ver comandos arriba)
+4. **Otro PC/dispositivo**: Usa la IP y puerto en la UI de Streamlit
+
 ## ⚙️ Configuración
 
-La API se configura automáticamente al iniciar. El modelo se carga desde la carpeta `../models/` (raíz del proyecto) y el mapping desde `../data/mapping.txt`.
+- **Host local**: `127.0.0.1` (sin `-g`)
+- **Host red**: `0.0.0.0` (con `-g`)
+- **Puerto**: `8000` (fijo)
+- **Modelo**: Se carga desde `../models/modelo.pkl`
+- **Mapping**: Se carga desde `../data/mapping.txt`
 
 ## 🔧 Desarrollo
 
-Para ejecutar en modo desarrollo con recarga automática:
+Para ejecutar con recarga automática (solo desarrollo local):
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
