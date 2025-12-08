@@ -13,6 +13,10 @@ from pydantic import BaseModel
 import io
 import base64
 from typing import List
+from langdetect import detect, DetectorFactory
+
+# Fijar semilla para resultados consistentes en langdetect
+DetectorFactory.seed = 0
 
 # Añadir directorio raíz al path
 project_root = Path(__file__).resolve().parent.parent
@@ -53,6 +57,7 @@ class RecognitionResponse(BaseModel):
     confianza_promedio: float
     letras: List[str]
     confidencias: List[float]
+    idioma: str
 
 @app.on_event("startup")
 async def cargar_modelo():
@@ -84,6 +89,28 @@ async def cargar_modelo():
             label_mapping[int(label)] = letter
     
     print("✅ Modelo cargado correctamente")
+
+def detectar_idioma(texto):
+    """Detecta el idioma del texto reconocido."""
+    try:
+        if len(texto.strip()) < 3:
+            return "Desconocido"
+        
+        lang_code = detect(texto)
+        
+        idiomas = {
+            'es': '🇪🇸 Español',
+            'en': '🇬🇧 Inglés',
+            'ca': '🇪🇸 Catalán',
+            'fr': '🇫🇷 Francés',
+            'de': '🇩🇪 Alemán',
+            'it': '🇮🇹 Italiano',
+            'pt': '🇵🇹 Portugués'
+        }
+        
+        return idiomas.get(lang_code, f"Otro ({lang_code})")
+    except:
+        return "Desconocido"
 
 def reconocer_texto(img_array):
     """Reconoce texto de una imagen."""
@@ -127,11 +154,15 @@ def reconocer_texto(img_array):
     texto_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_reconocido])
     confianza_promedio = float(np.mean(confidencias))
     
+    # Detectar idioma
+    idioma = detectar_idioma(texto_final)
+    
     return {
         "texto": texto_final,
         "confianza_promedio": confianza_promedio,
         "letras": texto_reconocido,
-        "confidencias": confidencias
+        "confidencias": confidencias,
+        "idioma": idioma
     }
 
 @app.get("/")
@@ -184,7 +215,8 @@ async def upload_image(file: UploadFile = File(...)):
             "texto": resultado["texto"],
             "confianza_promedio": resultado["confianza_promedio"],
             "letras": resultado["letras"],
-            "confidencias": resultado["confidencias"]
+            "confidencias": resultado["confidencias"],
+            "idioma": resultado["idioma"]
         })
     
     except Exception as e:

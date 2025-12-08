@@ -1,7 +1,6 @@
 streamlit
 pillow
 numpy
-langdetect
 requests
 pandas
 matplotlib

@@ -76,7 +76,8 @@ Reconoce texto de una imagen.
   "texto": "Hola mundo",
   "confianza_promedio": 0.95,
   "letras": ["H", "o", "l", "a", "ESPACIO", "m", "u", "n", "d", "o"],
-  "confidencias": [0.98, 0.96, 0.94, 0.97, 0.99, 0.93, 0.95, 0.96, 0.94, 0.95]
+  "confidencias": [0.98, 0.96, 0.94, 0.97, 0.99, 0.93, 0.95, 0.96, 0.94, 0.95],
+  "idioma": "🇪🇸 Español"
 }
 ```
 

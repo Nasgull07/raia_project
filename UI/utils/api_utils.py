@@ -6,10 +6,6 @@ import streamlit as st
 import requests
 import io
 from PIL import Image
-from langdetect import detect, DetectorFactory
-
-# Fijar semilla para resultados consistentes en langdetect
-DetectorFactory.seed = 0
 
 def get_api_url():
     """Obtiene la URL de la API desde session_state o usa el default."""
@@ -36,23 +32,6 @@ def verificar_api(api_url=None):
         return response.status_code == 200
     except:
         return False
-
-def detectar_idioma(texto):
-    """Detecta el idioma del texto (español o inglés)."""
-    try:
-        if len(texto.strip()) < 3:
-            return "Desconocido"
-        
-        lang_code = detect(texto)
-        
-        idiomas = {
-            'es': '🇪🇸 Español',
-            'en': '🇬🇧 Inglés'
-        }
-        
-        return idiomas.get(lang_code, f"Otro ({lang_code})")
-    except:
-        return "Desconocido"
 
 def reconocer_texto_api(img):
     """
@@ -81,8 +60,8 @@ def reconocer_texto_api(img):
         if response.status_code == 200:
             resultado = response.json()
             
-            # Detectar idioma del texto reconocido
-            idioma = detectar_idioma(resultado['texto'])
+            # El idioma ya viene detectado desde la API
+            idioma = resultado.get('idioma', 'Desconocido')
             
             return resultado['texto'], resultado['confidencias'], idioma
         else:
