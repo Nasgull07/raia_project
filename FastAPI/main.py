@@ -1,0 +1,217 @@
+"""
+API FastAPI para reconocimiento de texto OCR
+"""
+import sys
+from pathlib import Path
+import numpy as np
+import pickle
+from PIL import Image
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import io
+import base64
+from typing import List
+
+# Añadir directorio raíz al path
+project_root = Path(__file__).resolve().parent.parent
+segmenter_path = project_root / "modelo" / "fase3_evaluacion"
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(segmenter_path))
+
+# Importar segmentador
+import importlib.util
+spec = importlib.util.spec_from_file_location(
+    "simple_segmenter", 
+    str(segmenter_path / "simple_segmenter.py")
+)
+simple_segmenter = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(simple_segmenter)
+SimpleImageSegmenter = simple_segmenter.SimpleImageSegmenter
+
+# Inicializar FastAPI
+app = FastAPI(title="OCR API", version="1.0.0")
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Variables globales para el modelo
+model = None
+scaler = None
+label_mapping = None
+
+# Modelos de datos
+class RecognitionResponse(BaseModel):
+    texto: str
+    confianza_promedio: float
+    letras: List[str]
+    confidencias: List[float]
+
+@app.on_event("startup")
+async def cargar_modelo():
+    """Carga el modelo al iniciar la aplicación."""
+    global model, scaler, label_mapping
+    
+    # Usar la carpeta models de la raíz del proyecto
+    models_dir = Path(__file__).parent.parent / "models"
+    data_dir = Path(__file__).parent.parent / "data"
+    
+    model_path = models_dir / "modelo.pkl"
+    scaler_path = models_dir / "scaler.pkl"
+    mapping_path = data_dir / "mapping.txt"
+    
+    if not model_path.exists():
+        raise FileNotFoundError(f"Modelo no encontrado en {model_path}")
+    
+    with open(model_path, 'rb') as f:
+        model = pickle.load(f)
+    
+    with open(scaler_path, 'rb') as f:
+        scaler = pickle.load(f)
+    
+    # Cargar mapping
+    label_mapping = {}
+    with open(mapping_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            label, letter = line.strip().split()
+            label_mapping[int(label)] = letter
+    
+    print("✅ Modelo cargado correctamente")
+
+def reconocer_texto(img_array):
+    """Reconoce texto de una imagen."""
+    # Segmentar
+    segmenter = SimpleImageSegmenter()
+    letras_segmentadas = segmenter.segment_word(img_array)
+    
+    if not letras_segmentadas:
+        return None
+    
+    # Predecir cada letra
+    texto_reconocido = []
+    confidencias = []
+    
+    for letra_img in letras_segmentadas:
+        # Asegurar 28x28
+        if letra_img.shape != (28, 28):
+            img_pil = Image.fromarray(letra_img.astype(np.uint8))
+            img_pil = img_pil.resize((28, 28), Image.LANCZOS)
+            letra_img = np.array(img_pil)
+        
+        # Invertir colores
+        letra_img = 255 - letra_img
+        
+        # Aplanar y normalizar
+        letra_flat = letra_img.flatten().reshape(1, -1)
+        letra_scaled = scaler.transform(letra_flat)
+        
+        # Predecir
+        pred = model.predict(letra_scaled)[0]
+        proba = model.predict_proba(letra_scaled)[0]
+        
+        letra = label_mapping[pred]
+        pred_idx = np.where(model.classes_ == pred)[0][0]
+        confianza = proba[pred_idx]
+        
+        texto_reconocido.append(letra)
+        confidencias.append(float(confianza))
+    
+    # Reemplazar 'ESPACIO' por espacio real
+    texto_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_reconocido])
+    confianza_promedio = float(np.mean(confidencias))
+    
+    return {
+        "texto": texto_final,
+        "confianza_promedio": confianza_promedio,
+        "letras": texto_reconocido,
+        "confidencias": confidencias
+    }
+
+@app.get("/")
+async def root():
+    """Endpoint raíz."""
+    return {
+        "mensaje": "API OCR funcionando",
+        "version": "1.0.0",
+        "endpoints": ["/upload-image/", "/health"]
+    }
+
+@app.get("/health")
+async def health():
+    """Verificar estado de la API."""
+    return {
+        "status": "ok",
+        "modelo_cargado": model is not None
+    }
+
+@app.post("/upload-image/")
+async def upload_image(file: UploadFile = File(...)):
+    """
+    Recibe una imagen desde Streamlit y reconoce el texto.
+    Endpoint compatible con el patrón de enviarFitxerStreamlit-ServerAPI.py
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Modelo no cargado")
+    
+    try:
+        # Nombre del archivo
+        filename = file.filename
+        
+        # Leer contenido en bytes
+        contents = await file.read()
+        
+        # Convertir bytes a imagen PIL en escala de grises
+        img = Image.open(io.BytesIO(contents)).convert('L')
+        img_array = np.array(img)
+        
+        # Procesar con el modelo OCR
+        resultado = reconocer_texto(img_array)
+        
+        if resultado is None:
+            raise HTTPException(status_code=400, detail="No se pudieron detectar letras en la imagen")
+        
+        # Retornar JSON con resultados
+        return JSONResponse(content={
+            "filename": filename,
+            "size": len(contents),
+            "texto": resultado["texto"],
+            "confianza_promedio": resultado["confianza_promedio"],
+            "letras": resultado["letras"],
+            "confidencias": resultado["confidencias"]
+        })
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al procesar imagen: {str(e)}")
+
+if __name__ == "__main__":
+    import uvicorn
+    import argparse
+    
+    # Configurar argumentos de línea de comandos
+    parser = argparse.ArgumentParser(description='Servidor API OCR')
+    parser.add_argument('-g', '--global', dest='global_access', action='store_true',
+                        help='Ejecutar en la red local (accesible desde otros dispositivos)')
+    args = parser.parse_args()
+    
+    # Determinar host según el argumento
+    if args.global_access:
+        import socket
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        print(f"🌐 Ejecutando en red local")
+        print(f"   - Acceso local: http://localhost:8000")
+        print(f"   - Acceso en red: http://{local_ip}:8000")
+        host = "0.0.0.0"
+    else:
+        print(f"🏠 Ejecutando en modo local")
+        print(f"   - Acceso: http://localhost:8000")
+        host = "127.0.0.1"
+    
+    uvicorn.run(app, host=host, port=8000)
