@@ -194,19 +194,33 @@ async def upload_image(file: UploadFile = File(...)):
     try:
         # Nombre del archivo
         filename = file.filename
+        print(f"📥 Recibiendo imagen: {filename}")
         
         # Leer contenido en bytes
         contents = await file.read()
+        print(f"📦 Tamaño: {len(contents)} bytes")
         
         # Convertir bytes a imagen PIL en escala de grises
         img = Image.open(io.BytesIO(contents)).convert('L')
         img_array = np.array(img)
+        print(f"🖼️  Imagen cargada: {img_array.shape}")
+        
+        # Guardar imagen recibida para debug
+        debug_dir = Path(__file__).parent / "debug_images"
+        debug_dir.mkdir(exist_ok=True)
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        debug_path = debug_dir / f"{timestamp}_{filename}"
+        img.save(debug_path)
+        print(f"💾 Imagen guardada en: {debug_path}")
         
         # Procesar con el modelo OCR
         resultado = reconocer_texto(img_array)
         
         if resultado is None:
             raise HTTPException(status_code=400, detail="No se pudieron detectar letras en la imagen")
+        
+        print(f"✅ Texto reconocido: {resultado['texto']}")
         
         # Retornar JSON con resultados
         return JSONResponse(content={
@@ -219,7 +233,12 @@ async def upload_image(file: UploadFile = File(...)):
             "idioma": resultado["idioma"]
         })
     
+    except HTTPException:
+        raise
     except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"❌ ERROR: {error_detail}")
         raise HTTPException(status_code=500, detail=f"Error al procesar imagen: {str(e)}")
 
 if __name__ == "__main__":
@@ -230,6 +249,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Servidor API OCR')
     parser.add_argument('-g', '--global', dest='global_access', action='store_true',
                         help='Ejecutar en la red local (accesible desde otros dispositivos)')
+    parser.add_argument('--https', action='store_true',
+                        help='Habilitar HTTPS (requiere cert.pem y key.pem)')
     args = parser.parse_args()
     
     # Determinar host según el argumento
@@ -263,4 +284,33 @@ if __name__ == "__main__":
         print(f"   - Acceso: http://localhost:8000")
         host = "127.0.0.1"
     
-    uvicorn.run(app, host=host, port=8000)
+    # Configurar HTTPS si se solicita
+    ssl_keyfile = None
+    ssl_certfile = None
+    protocol = "http"
+    
+    if args.https:
+        cert_path = Path(__file__).parent / "cert.pem"
+        key_path = Path(__file__).parent / "key.pem"
+        
+        if cert_path.exists() and key_path.exists():
+            ssl_keyfile = str(key_path)
+            ssl_certfile = str(cert_path)
+            protocol = "https"
+            print(f"\n🔒 HTTPS habilitado")
+            print(f"   ⚠️  Los navegadores mostrarán advertencia de seguridad")
+            print(f"   ℹ️  Acepta el riesgo manualmente en tu navegador")
+        else:
+            print(f"\n❌ Certificados no encontrados. Genera con:")
+            print(f"   python generar_certificados.py")
+            sys.exit(1)
+    
+    # Mostrar URLs finales
+    if args.global_access and protocol == "https":
+        print(f"\n🌐 URLs de acceso HTTPS:")
+        print(f"   - Local: https://localhost:8000")
+        print(f"   - Red local: https://{local_ip}:8000")
+    elif protocol == "http":
+        print(f"\n💡 Para usar HTTPS, ejecuta: python main.py -g --https")
+    
+    uvicorn.run(app, host=host, port=8000, ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)
