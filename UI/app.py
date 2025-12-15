@@ -10,6 +10,8 @@ import pickle
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from langdetect import detect, DetectorFactory
+import requests
+from utils.sidebar_common import render_sidebar
 
 # Añadir directorio raíz del proyecto al path
 project_root = Path(__file__).resolve().parent.parent
@@ -46,6 +48,22 @@ st.set_page_config(
 # Fijar semilla para resultados consistentes en langdetect
 DetectorFactory.seed = 0
 
+def verificar_conexion_api(api_url):
+    """Verifica si la API FastAPI está disponible."""
+    try:
+        response = requests.get(f"{api_url}/health", timeout=2)
+        if response.status_code == 200:
+            data = response.json()
+            return True, data
+        else:
+            return False, None
+    except requests.exceptions.ConnectionError:
+        return False, {"error": "No se pudo conectar"}
+    except requests.exceptions.Timeout:
+        return False, {"error": "Timeout"}
+    except Exception as e:
+        return False, {"error": str(e)}
+
 @st.cache_resource
 def cargar_modelo():
     """Carga el modelo y el scaler."""
@@ -73,14 +91,9 @@ def cargar_modelo():
     return model, scaler, label_mapping
 
 def generar_imagen_texto(texto, font_size=60):
-    """Genera una imagen con el texto proporcionado."""
-    # Calcular tamaño de imagen
-    width = max(300, len(texto) * font_size)
-    height = font_size + 40
-    
-    # Crear imagen blanca
-    img = Image.new('L', (width, height), color=255)
-    draw = ImageDraw.Draw(img)
+    """Genera una imagen con el texto proporcionado (soporta saltos de línea)."""
+    # Dividir texto en líneas
+    lineas = texto.split('\n')
     
     # Intentar usar una fuente
     try:
@@ -88,8 +101,37 @@ def generar_imagen_texto(texto, font_size=60):
     except:
         font = ImageFont.load_default()
     
-    # Dibujar texto negro
-    draw.text((20, 10), texto, fill=0, font=font)
+    # Calcular dimensiones necesarias
+    max_width = 0
+    line_heights = []
+    
+    for linea in lineas:
+        try:
+            # Para fuentes TrueType
+            bbox = font.getbbox(linea)
+            line_width = bbox[2] - bbox[0]
+            line_height = bbox[3] - bbox[1]
+        except:
+            # Fallback para fuentes sin getbbox
+            line_width = len(linea) * (font_size // 2)
+            line_height = font_size
+        
+        max_width = max(max_width, line_width)
+        line_heights.append(line_height)
+    
+    # Dimensiones de la imagen
+    width = max(300, max_width + 40)
+    total_height = sum(line_heights) + (len(lineas) + 1) * 20  # Espaciado entre líneas
+    
+    # Crear imagen blanca
+    img = Image.new('L', (width, total_height), color=255)
+    draw = ImageDraw.Draw(img)
+    
+    # Dibujar cada línea
+    y_offset = 20
+    for i, linea in enumerate(lineas):
+        draw.text((20, y_offset), linea, fill=0, font=font)
+        y_offset += line_heights[i] + 20
     
     return img
 
@@ -113,55 +155,64 @@ def detectar_idioma(texto):
         return "Desconocido"
 
 def reconocer_texto(img_array, model, scaler, label_mapping):
-    """Reconoce texto de una imagen."""
-    # Segmentar
+    """Reconoce texto de una imagen (soporta múltiples líneas)."""
+    # Segmentar (ahora devuelve lista de líneas)
     segmenter = SimpleImageSegmenter()
-    letras_segmentadas = segmenter.segment_word(img_array)
+    lineas_segmentadas = segmenter.segment_image(img_array)
     
-    if not letras_segmentadas:
-        return None, [], []
+    if not lineas_segmentadas:
+        return None, [], [], None
     
-    # Predecir cada letra
-    texto_reconocido = []
-    confidencias = []
-    letras_imgs = []
+    # Procesar cada línea
+    todas_las_lineas = []
+    todas_confidencias = []
+    todas_letras_imgs = []
     
-    for letra_img in letras_segmentadas:
-        # Asegurar 28x28
-        if letra_img.shape != (28, 28):
-            img_pil = Image.fromarray(letra_img.astype(np.uint8))
-            img_pil = img_pil.resize((28, 28), Image.LANCZOS)
-            letra_img = np.array(img_pil)
+    for linea_chars in lineas_segmentadas:
+        texto_linea = []
+        confidencias_linea = []
         
-        # INVERTIR COLORES
-        letra_img = 255 - letra_img
+        for letra_img in linea_chars:
+            # Asegurar 28x28
+            if letra_img.shape != (28, 28):
+                img_pil = Image.fromarray(letra_img.astype(np.uint8))
+                img_pil = img_pil.resize((28, 28), Image.LANCZOS)
+                letra_img = np.array(img_pil)
+            
+            # INVERTIR COLORES
+            letra_img = 255 - letra_img
+            
+            # Guardar para visualización
+            todas_letras_imgs.append(letra_img)
+            
+            # Aplanar y normalizar
+            letra_flat = letra_img.flatten().reshape(1, -1)
+            letra_scaled = scaler.transform(letra_flat)
+            
+            # Predecir
+            pred = model.predict(letra_scaled)[0]
+            proba = model.predict_proba(letra_scaled)[0]
+            
+            letra = label_mapping[pred]
+            pred_idx = np.where(model.classes_ == pred)[0][0]
+            confianza = proba[pred_idx]
+            
+            texto_linea.append(letra)
+            confidencias_linea.append(confianza)
         
-        # Guardar para visualización
-        letras_imgs.append(letra_img)
-        
-        # Aplanar y normalizar
-        letra_flat = letra_img.flatten().reshape(1, -1)
-        letra_scaled = scaler.transform(letra_flat)
-        
-        # Predecir
-        pred = model.predict(letra_scaled)[0]
-        proba = model.predict_proba(letra_scaled)[0]
-        
-        letra = label_mapping[pred]
-        pred_idx = np.where(model.classes_ == pred)[0][0]
-        confianza = proba[pred_idx]
-        
-        texto_reconocido.append(letra)
-        confidencias.append(confianza)
+        # Reemplazar 'ESPACIO' por espacio real en la línea
+        texto_linea_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_linea])
+        todas_las_lineas.append(texto_linea_final)
+        todas_confidencias.extend(confidencias_linea)
     
-    # Reemplazar 'ESPACIO' por espacio real
-    texto_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_reconocido])
-    confianza_promedio = np.mean(confidencias)
+    # Unir líneas con salto de línea
+    texto_final = '\n'.join(todas_las_lineas)
+    confianza_promedio = np.mean(todas_confidencias) if todas_confidencias else 0
     
     # Detectar idioma
     idioma = detectar_idioma(texto_final)
     
-    return texto_final, confidencias, letras_imgs, idioma
+    return texto_final, todas_confidencias, todas_letras_imgs, idioma
 
 def main():
     # Título
@@ -334,11 +385,12 @@ def main():
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            texto_input = st.text_input(
+            texto_input = st.text_area(
                 "Texto a reconocer:",
                 value="Hola",
-                max_chars=50,
-                help="Solo letras (A-Z, a-z)"
+                max_chars=200,
+                height=100,
+                help="Escribe tu texto. Usa Enter para saltos de línea"
             )
         
         with col2:
@@ -348,76 +400,83 @@ def main():
             if not texto_input:
                 st.warning("⚠️ Escribe algo primero")
             else:
-                # Validar que solo haya letras, acentos y signos permitidos (Español, Catalán, Inglés)
+                # Validar que solo haya letras, acentos, signos permitidos y saltos de línea (Español, Catalán, Inglés)
                 import re
                 texto_validado = texto_input
-                # Incluye: letras básicas, acentos agudos/graves, diéresis, ñ, ç, apóstrofe, puntuación
-                if not re.fullmatch(r"[A-Za-zÁÉÍÓÚáéíóúÀÈÌÒÙàèìòùÏÜïüÇçÑñ',.;:!?¿¡\- ]+", texto_validado):
-                    st.warning("⚠️ Solo se permiten letras, acentos, apóstrofe, espacios y signos de puntuación")
+                # Incluye: letras básicas, acentos agudos/graves, diéresis, ñ, ç, apóstrofe, puntuación, saltos de línea
+                if not re.fullmatch(r"[A-Za-zÁÉÍÓÚáéíóúÀÈÌÒÙàèìòùÏÜïüÇçÑñ',.;:!?¿¡\- \n]+", texto_validado):
+                    st.warning("⚠️ Solo se permiten letras, acentos, apóstrofe, espacios, saltos de línea y signos de puntuación")
                 else:
                     # Generar imagen
                     img = generar_imagen_texto(texto_input, font_size)
                     img_array = np.array(img)
+                    
                     # Mostrar imagen generada
                     st.markdown("#### 🖼️ Imagen Generada:")
-                st.image(img, use_container_width=False)
-                
-                # Reconocer
-                with st.spinner("Reconociendo..."):
-                    texto_reconocido, confidencias, letras_imgs, idioma = reconocer_texto(
-                        img_array, model, scaler, label_mapping
-                    )
-                
-                if texto_reconocido is None:
-                    st.error("❌ No se pudieron detectar letras")
-                else:
-                    # Reemplazar 'ESPACIO' por espacio real
-                    texto_reconocido_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_reconocido])
-                    # Resultados
-                    st.markdown("---")
-                    st.markdown("### 📊 Resultados")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown("**📝 Texto Original:**")
-                        st.text_area(
-                            "Original",
-                            texto_input,
-                            height=100,
-                            label_visibility="collapsed"
+                    st.image(img, use_container_width=False)
+                    
+                    # Reconocer
+                    with st.spinner("Reconociendo..."):
+                        texto_reconocido, confidencias, letras_imgs, idioma = reconocer_texto(
+                            img_array, model, scaler, label_mapping
                         )
-                    with col2:
-                        st.markdown("**✅ Texto Reconocido:**")
-                        st.text_area(
-                            "Reconocido",
-                            texto_reconocido_final,
-                            height=100,
-                            label_visibility="collapsed"
-                        )
-                    # Confianza promedio e idioma
-                    col_m1, col_m2 = st.columns(2)
-                    with col_m1:
-                        confianza_promedio = np.mean(confidencias)
-                        st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
-                    with col_m2:
-                        st.metric("🌍 Idioma Detectado", idioma)
-                    # Verificar si es correcto
-                    es_correcto = texto_input == texto_reconocido_final
-                    if es_correcto:
-                        st.success("✅ ¡Reconocimiento correcto!")
+                    
+                    if texto_reconocido is None:
+                        st.error("❌ No se pudieron detectar letras")
                     else:
-                        st.error("❌ Reconocimiento incorrecto")
-                    # Mostrar letras individuales
-                    st.markdown("#### 🔤 Letras Detectadas:")
-                    st.markdown(f"**Total de letras reconocidas: {len(texto_reconocido_final)}**")
-                    # Mostrar todas las letras en filas de 10
-                    num_letras = len(letras_imgs)
-                    for fila in range(0, num_letras, 10):
-                        cols = st.columns(min(10, num_letras - fila))
-                        for i, col in enumerate(cols):
-                            idx = fila + i
-                            if idx < num_letras:
-                                with col:
-                                    st.image(letras_imgs[idx], caption=f"{texto_reconocido_final[idx]}\n{confidencias[idx]*100:.0f}%", width=50)
+                        # El texto reconocido ya viene con saltos de línea desde segment_image
+                        texto_reconocido_final = texto_reconocido
+                        
+                        # Resultados
+                        st.markdown("---")
+                        st.markdown("### 📊 Resultados")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**📝 Texto Original:**")
+                            st.text_area(
+                                "Original",
+                                texto_input,
+                                height=100,
+                                label_visibility="collapsed"
+                            )
+                        with col2:
+                            st.markdown("**✅ Texto Reconocido:**")
+                            st.text_area(
+                                "Reconocido",
+                                texto_reconocido_final,
+                                height=100,
+                                label_visibility="collapsed"
+                            )
+                        # Confianza promedio e idioma
+                        col_m1, col_m2 = st.columns(2)
+                        with col_m1:
+                            confianza_promedio = np.mean(confidencias)
+                            st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
+                        with col_m2:
+                            st.metric("🌍 Idioma Detectado", idioma)
+                        # Verificar si es correcto
+                        es_correcto = texto_input == texto_reconocido_final
+                        if es_correcto:
+                            st.success("✅ ¡Reconocimiento correcto!")
+                        else:
+                            st.error("❌ Reconocimiento incorrecto")
+                        
+                        # Mostrar letras individuales
+                        st.markdown("#### 🔤 Letras Detectadas:")
+                        # Crear lista de letras sin saltos de línea para emparejar con imágenes
+                        letras_sin_saltos = [c for c in texto_reconocido_final if c != '\n']
+                        st.markdown(f"**Total de caracteres reconocidos: {len(letras_sin_saltos)}**")
+                        
+                        # Mostrar todas las letras en filas de 10
+                        num_letras = len(letras_imgs)
+                        for fila in range(0, num_letras, 10):
+                            cols = st.columns(min(10, num_letras - fila))
+                            for i, col in enumerate(cols):
+                                idx = fila + i
+                                if idx < num_letras:
+                                    with col:
+                                        letra_display = letras_sin_saltos[idx] if idx < len(letras_sin_saltos) else "?"
+                                        st.image(letras_imgs[idx], caption=f"{letra_display}\n{confidencias[idx]*100:.0f}%", width=50)
     
     # Tab 2: Subir imagen
     with tab2:
@@ -425,7 +484,7 @@ def main():
         
         uploaded_file = st.file_uploader(
             "Selecciona una imagen:",
-            type=['png', 'jpg', 'jpeg'],
+            type=['png', 'jpg', 'jpeg', 'bmp'],
             help="Imagen con texto negro sobre fondo blanco"
         )
         
@@ -468,7 +527,9 @@ def main():
                         st.metric("🌍 Idioma", idioma)
                     # Mostrar letras individuales
                     st.markdown("#### 🔤 Letras Detectadas:")
-                    st.markdown(f"**Total de letras reconocidas: {len(texto_reconocido_final)}**")
+                    # Filtrar saltos de línea para emparejar correctamente con imágenes
+                    letras_sin_saltos = [c for c in texto_reconocido_final if c != '\n']
+                    st.markdown(f"**Total de caracteres reconocidos: {len(letras_sin_saltos)}**")
                     # Mostrar todas las letras en filas de 10
                     num_letras = len(letras_imgs)
                     for fila in range(0, num_letras, 10):
@@ -477,12 +538,30 @@ def main():
                             idx = fila + i
                             if idx < num_letras:
                                 with col:
-                                    st.image(letras_imgs[idx], caption=f"{texto_reconocido_final[idx]}\n{confidencias[idx]*100:.0f}%", width=50)
-                    
-                    # Detalles de cada letra
-                    with st.expander("📋 Detalles de cada letra"):
-                        for i, (letra, conf) in enumerate(zip(texto_reconocido, confidencias)):
-                            st.write(f"**Letra {i+1}:** `{letra}` - Confianza: **{conf*100:.1f}%**")
+                                    letra_display = letras_sin_saltos[idx] if idx < len(letras_sin_saltos) else "?"
+                                    st.image(letras_imgs[idx], caption=f"{letra_display}\n{confidencias[idx]*100:.0f}%", width=50)
+        else:
+            # Mostrar consejos cuando no hay archivo cargado
+            st.info("""
+            ### 📋 Instrucciones:
+            
+            1. Haz clic en **"Browse files"** arriba
+            2. Selecciona una imagen de tu dispositivo
+            3. La imagen debe contener texto claro y legible
+            4. Presiona **"Reconocer Texto"** para procesarla
+            
+            ### ✅ Mejores resultados con:
+            - ✏️ Texto negro sobre fondo blanco
+            - 📐 Imágenes de alta calidad (mínimo 300 DPI)
+            - ➡️ Texto horizontal y bien alineado
+            - 🔤 Fuentes claras (Arial, Times, Calibri)
+            
+            ### ⚠️ Evita:
+            - 🌫️ Imágenes borrosas o de baja calidad
+            - 👥 Texto con sombras o efectos
+            - 🎨 Fondos con ruido o texturas
+            - 🔤 Letras muy juntas o superpuestas
+            """)
     
     # Tab 3: Explorador de archivos
     with tab3:
@@ -568,37 +647,11 @@ def main():
                 except Exception as e:
                     st.error(f"❌ Error al cargar la imagen: {str(e)}")
     
-    # Sidebar con información
-    with st.sidebar:
-        st.markdown("### ℹ️ Información del Modelo")
-        st.markdown("""
-        Este modelo OCR reconoce:
-        - **91 clases de caracteres**
-        - **Español**: A-Z, a-z, áéíóú, ñ, ü, puntuación
-        - **Catalán**: àèò, ï, ç
-        - **Inglés**: apóstrofe (')
-        - **Precisión**: ~96%
-        - **Resolución**: 28x28 píxeles
-        
-        ### 📝 Consejos
-        - Usa texto negro sobre fondo blanco
-        - Fuente clara y legible
-        - El texto debe estar horizontal
-        - Evita letras muy juntas
-        
-        ### ⚠️ Limitaciones
-        - Dificultad para diferenciar I/l en algunas fuentes
-        - Mejor rendimiento con Arial, Times, Calibri
-        """)
-        
-        st.markdown("---")
-        st.markdown("### 📊 Estadísticas")
-        st.info(f"**Clases**: {len(label_mapping)}\n**Modelo**: SVM Linear\n**Idiomas**: ES, CA, EN")
-        
-        st.markdown("---")
-        st.markdown("### 🛠️ Utilidades")
-        if st.button("🔄 Reentrenar Modelo", use_container_width=True):
-            st.info("Para reentrenar, ejecuta en terminal:\n\n1. `cd modelo/fase1_dataset`\n2. `python generar_con_puntuacion.py`\n3. `python generar_dataset.py`\n4. `cd ../fase2_entrenamiento`\n5. `python entrenar_modelo.py`")
+    # Guardar número de clases en session_state para el sidebar
+    st.session_state['num_clases'] = len(label_mapping)
+    
+    # Renderizar sidebar común
+    render_sidebar()
 
 if __name__ == "__main__":
     main()

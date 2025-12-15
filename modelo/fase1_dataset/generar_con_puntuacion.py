@@ -185,12 +185,12 @@ class GeneradorConPuntuacion:
                 draw.text((20, 20), palabra, fill=0, font=font)
 
                 img.save(filepath)
-                print(f"  ✅ {filename}")
+                print(f"  [OK] {filename}")
                 # Guardar mapeo palabra original → archivo
                 mapping_file.write(f"{filename}\t{palabra}\n")
                 contador += 1
 
-        print(f"✅ Generadas {contador} palabras con puntuación")
+        print(f"[OK] Generadas {contador} palabras con puntuación")
     
     def generar_caracteres_individuales(self, repeticiones: int = 50):
         """Genera imágenes individuales de cada caracter."""

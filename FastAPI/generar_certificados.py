@@ -15,8 +15,8 @@ try:
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives import serialization
 except ImportError:
-    print("❌ La librería 'cryptography' no está instalada.")
-    print("   Instálala con: pip install cryptography")
+    print("La librería 'cryptography' no está instalada.")
+    print("Instálala con: pip install cryptography")
     sys.exit(1)
 
 def obtener_ip_local():
@@ -112,17 +112,17 @@ def generar_certificados():
         with open(cert_path, "wb") as f:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
         
-        print(f"\n✅ Certificados generados correctamente:")
+        print(f"\n Certificados generados correctamente:")
         print(f"   - Certificado: {cert_path}")
         print(f"   - Clave privada: {key_path}")
         print(f"   - Válido por: 365 días")
         print(f"   - Válido para: localhost, 127.0.0.1" + (f", {ip_local}" if ip_local else ""))
-        print(f"\n⚠️  Nota: Los navegadores mostrarán una advertencia de seguridad.")
+        print(f"\n  Nota: Los navegadores mostrarán una advertencia de seguridad.")
         print(f"   Esto es normal con certificados autofirmados.")
         print(f"   Deberás aceptar manualmente el riesgo en tu navegador.")
         
     except Exception as e:
-        print(f"❌ Error al generar certificados: {e}")
+        print(f" Error al generar certificados: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

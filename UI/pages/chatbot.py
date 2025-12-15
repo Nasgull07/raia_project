@@ -12,13 +12,17 @@ Elementos de Streamlit:
 import streamlit as st
 import sys
 sys.path.append('..')
-from utils.api_utils import verificar_api, reconocer_texto_api, detectar_idioma
+from utils.api_utils import verificar_api, reconocer_texto_api
+from utils.sidebar_common import render_sidebar
 from datetime import datetime
 from PIL import Image
 import io
 
 st.title("💬 OCR Chat")
 st.markdown("Sube una imagen para reconocer el texto 🔍")
+
+# Renderizar sidebar común
+render_sidebar()
 
 # Justificación: Session state para mantener historial de chat y estado de espera de imagen
 if 'chat_messages' not in st.session_state:

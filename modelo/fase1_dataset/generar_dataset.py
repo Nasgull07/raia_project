@@ -117,7 +117,7 @@ def procesar_caracteres_individuales(chars_dir: Path, segmenter):
         return samples
     
     image_files = list(chars_dir.glob("char_*.png"))
-    print(f"🔤 Encontrados {len(image_files)} caracteres individuales")
+    print(f"[INFO] Encontrados {len(image_files)} caracteres individuales")
     
     for img_path in tqdm(image_files, desc="Procesando caracteres"):
         try:
@@ -265,20 +265,20 @@ def main():
         print("    Ejecuta primero: python generar_con_puntuacion.py")
     
     print()
-    print(f"✅ Total muestras: {len(all_samples)}")
+    print(f"[OK] Total muestras: {len(all_samples)}")
     
     if len(all_samples) == 0:
-        print("❌ No se generaron muestras")
+        print("[ERROR] No se generaron muestras")
         return
     
     # Crear DataFrame
-    print("📦 Creando CSV...")
+    print("[INFO] Creando CSV...")
     columns = ['label'] + [f'pixel{i}' for i in range(784)]
     df = pd.DataFrame(all_samples, columns=columns)
     
     # Mostrar distribución de clases
     print()
-    print("📊 Distribución de caracteres:")
+    print("[INFO] Distribución de caracteres:")
     label_counts = df['label'].value_counts().sort_index()
     
     # Mapeo inverso
@@ -315,12 +315,12 @@ def main():
             else:
                 f.write(f"{label} {char}\n")
     
-    print(f"✅ Train: {len(df_train)} muestras → {train_path}")
-    print(f"✅ Test: {len(df_test)} muestras → {test_path}")
-    print(f"✅ Mapping: {mapping_path}")
+    print(f"[OK] Train: {len(df_train)} muestras -> {train_path}")
+    print(f"[OK] Test: {len(df_test)} muestras -> {test_path}")
+    print(f"[OK] Mapping: {mapping_path}")
     print()
     print("=" * 70)
-    print("✅ DATASET GENERADO CON ÉXITO")
+    print("[OK] DATASET GENERADO CON ÉXITO")
     print("=" * 70)
     print()
     print(f"Total de clases: {len(LETTER_TO_LABEL)}")

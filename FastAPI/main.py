@@ -297,20 +297,20 @@ if __name__ == "__main__":
             ssl_keyfile = str(key_path)
             ssl_certfile = str(cert_path)
             protocol = "https"
-            print(f"\n🔒 HTTPS habilitado")
-            print(f"   ⚠️  Los navegadores mostrarán advertencia de seguridad")
-            print(f"   ℹ️  Acepta el riesgo manualmente en tu navegador")
+            print(f"\n HTTPS habilitado")
+            print(f"     Los navegadores mostrarán advertencia de seguridad")
+            print(f"     Acepta el riesgo manualmente en tu navegador")
         else:
-            print(f"\n❌ Certificados no encontrados. Genera con:")
+            print(f"\n Certificados no encontrados. Genera con:")
             print(f"   python generar_certificados.py")
             sys.exit(1)
     
     # Mostrar URLs finales
     if args.global_access and protocol == "https":
-        print(f"\n🌐 URLs de acceso HTTPS:")
+        print(f"\n URLs de acceso HTTPS:")
         print(f"   - Local: https://localhost:8000")
         print(f"   - Red local: https://{local_ip}:8000")
     elif protocol == "http":
-        print(f"\n💡 Para usar HTTPS, ejecuta: python main.py -g --https")
+        print(f"\n Para usar HTTPS, ejecuta: python main.py -g --https")
     
     uvicorn.run(app, host=host, port=8000, ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)

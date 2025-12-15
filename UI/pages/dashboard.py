@@ -17,9 +17,13 @@ import matplotlib.pyplot as plt
 import sys
 sys.path.append('..')
 from utils.api_utils import verificar_api
+from utils.sidebar_common import render_sidebar
 
 st.title("📊 Dashboard de Estadísticas")
 st.markdown("### Análisis visual del sistema OCR")
+
+# Renderizar sidebar común
+render_sidebar()
 
 # Verificar si hay datos
 if 'historial_reconocimientos' not in st.session_state or len(st.session_state.historial_reconocimientos) == 0:
