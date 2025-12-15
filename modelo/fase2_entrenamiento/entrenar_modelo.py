@@ -22,15 +22,15 @@ def main():
     print()
     
     # Cargar datos
-    print("📂 Cargando datos...")
+    print("[INFO] Cargando datos...")
     train_path = DATA_DIR / "train.csv"
     test_path = DATA_DIR / "test.csv"
     
     df_train = pd.read_csv(train_path)
     df_test = pd.read_csv(test_path)
     
-    print(f"✅ Train: {len(df_train)} muestras")
-    print(f"✅ Test: {len(df_test)} muestras")
+    print(f"[OK] Train: {len(df_train)} muestras")
+    print(f"[OK] Test: {len(df_test)} muestras")
     print()
     
     # Separar X, y
@@ -40,27 +40,27 @@ def main():
     y_test = df_test.iloc[:, 0].values
     
     # Normalizar
-    print("🔧 Normalizando (StandardScaler)...")
+    print("[INFO] Normalizando (StandardScaler)...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    print(f"✅ Train: {X_train_scaled.shape}")
-    print(f"✅ Test: {X_test_scaled.shape}")
+    print(f"[OK] Train: {X_train_scaled.shape}")
+    print(f"[OK] Test: {X_test_scaled.shape}")
     print()
     
     # Entrenar SVM
-    print("🤖 Entrenando SVM (C=1.0, kernel=linear)...")
+    print("[INFO] Entrenando SVM (C=1.0, kernel=linear)...")
     print("   Esto puede tardar 1-2 minutos...")
     
     model = SVC(C=1.0, kernel='linear', probability=True, random_state=42)
     model.fit(X_train_scaled, y_train)
     
-    print("✅ Entrenamiento completado")
+    print("[OK] Entrenamiento completado")
     print()
     
     # Evaluar
-    print("📊 Evaluando modelo...")
+    print("[INFO] Evaluando modelo...")
     
     y_train_pred = model.predict(X_train_scaled)
     train_acc = accuracy_score(y_train, y_train_pred)
@@ -73,7 +73,7 @@ def main():
     print()
     
     # Guardar modelo
-    print("💾 Guardando modelo...")
+    print("[INFO] Guardando modelo...")
     model_path = MODELS_DIR / "modelo.pkl"
     scaler_path = MODELS_DIR / "scaler.pkl"
     
@@ -83,15 +83,15 @@ def main():
     with open(scaler_path, 'wb') as f:
         pickle.dump(scaler, f)
     
-    print(f"✅ Modelo: {model_path}")
-    print(f"✅ Scaler: {scaler_path}")
+    print(f"[OK] Modelo: {model_path}")
+    print(f"[OK] Scaler: {scaler_path}")
     print()
     
     print("="*70)
-    print("✅ ENTRENAMIENTO COMPLETADO")
+    print("[OK] ENTRENAMIENTO COMPLETADO")
     print("="*70)
     print()
-    print(f"📊 Test Accuracy: {test_acc*100:.2f}%")
+    print(f"[INFO] Test Accuracy: {test_acc*100:.2f}%")
     print()
     print("Siguiente paso: python ../fase3_evaluacion/reconocer_texto.py imagen.png")
 

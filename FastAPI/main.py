@@ -88,7 +88,7 @@ async def cargar_modelo():
             label, letter = line.strip().split()
             label_mapping[int(label)] = letter
     
-    print("✅ Modelo cargado correctamente")
+    print("[OK] Modelo cargado correctamente")
 
 def detectar_idioma(texto):
     """Detecta el idioma del texto reconocido."""
@@ -251,10 +251,10 @@ if __name__ == "__main__":
             # Fallback al método antiguo
             local_ip = socket.gethostbyname(hostname)
         
-        print(f"🌐 Ejecutando en red local")
+        print(f"[RED] Ejecutando en red local")
         print(f"   - Acceso local: http://localhost:8000")
         print(f"   - Acceso en red: http://{local_ip}:8000")
-        print(f"\n⚠️  Asegúrate de que el firewall permita conexiones en el puerto 8000")
+        print(f"\n[AVISO] Asegúrate de que el firewall permita conexiones en el puerto 8000")
         if platform.system() == "Windows":
             print(f"   Ejecuta como Admin: netsh advfirewall firewall add rule name=\"FastAPI OCR\" dir=in action=allow protocol=TCP localport=8000")
         host = "0.0.0.0"

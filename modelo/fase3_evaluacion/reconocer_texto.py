@@ -23,7 +23,7 @@ def cargar_modelo():
     mapping_path = DATA_DIR / "mapping.txt"
     
     if not model_path.exists():
-        print("❌ Error: Modelo no existe")
+        print("[ERROR] Modelo no existe")
         print()
         print("Ejecuta primero: python ../fase2_entrenamiento/entrenar_modelo.py")
         sys.exit(1)
@@ -53,32 +53,32 @@ def reconocer_texto(image_path: Path):
     """Reconoce texto de una imagen."""
     
     # Cargar modelo
-    print("🤖 Cargando modelo...")
+    print("[INFO] Cargando modelo...")
     model, scaler, label_mapping = cargar_modelo()
-    print("✅ Modelo cargado")
+    print("[OK] Modelo cargado")
     print()
     
     # Cargar imagen
-    print(f"📷 Cargando imagen: {image_path.name}")
+    print(f"[INFO] Cargando imagen: {image_path.name}")
     img = Image.open(image_path).convert('L')
     img_array = np.array(img)
     print(f"   Dimensiones: {img_array.shape}")
     print()
     
     # Segmentar
-    print("✂️  Segmentando letras...")
+    print("[INFO] Segmentando letras...")
     segmenter = SimpleImageSegmenter()
     letras_segmentadas = segmenter.segment_word(img_array)
     
     if not letras_segmentadas:
-        print("❌ No se detectaron letras")
+        print("[ERROR] No se detectaron letras")
         return
     
-    print(f"✅ {len(letras_segmentadas)} letras detectadas")
+    print(f"[OK] {len(letras_segmentadas)} letras detectadas")
     print()
     
     # Predecir cada letra
-    print("🔍 Reconociendo...")
+    print("[INFO] Reconociendo...")
     texto_reconocido = []
     confidencias = []
     
@@ -116,8 +116,8 @@ def reconocer_texto(image_path: Path):
     
     print()
     print("="*70)
-    print(f"📝 TEXTO RECONOCIDO: {texto_final}")
-    print(f"📊 Confianza promedio: {confianza_promedio*100:.1f}%")
+    print(f"[RESULTADO] TEXTO RECONOCIDO: {texto_final}")
+    print(f"[INFO] Confianza promedio: {confianza_promedio*100:.1f}%")
     print("="*70)
 
 def main():
@@ -127,7 +127,7 @@ def main():
     
     image_path = Path(args.image_path)
     if not image_path.exists():
-        print(f"❌ Error: No existe {image_path}")
+        print(f"[ERROR] No existe {image_path}")
         return
     
     reconocer_texto(image_path)

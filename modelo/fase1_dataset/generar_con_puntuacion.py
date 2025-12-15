@@ -254,7 +254,7 @@ class GeneradorConPuntuacion:
             filepath = self.output_dir / filename
             img.save(filepath)
         
-        print(f"✅ Caracteres individuales generados")
+        print(f"[OK] Caracteres individuales generados")
 
 
 def main():
@@ -288,7 +288,7 @@ def main():
     print()
     
     print("=" * 70)
-    print("✅ GENERACIÓN COMPLETADA")
+    print("[OK] GENERACIÓN COMPLETADA")
     print("=" * 70)
     print()
     print(f"Directorio de salida: {generador.output_dir}")

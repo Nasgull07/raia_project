@@ -18,15 +18,15 @@ class SimpleImageSegmenter:
         self.min_spacing = 2
         self.debug = False  # Activar para debug
     
-    def segment_word(self, image: np.ndarray) -> List[np.ndarray]:
+    def segment_image(self, image: np.ndarray) -> List[List[np.ndarray]]:
         """
-        Segmentar imagen en caracteres individuales.
+        Segmentar imagen en líneas y luego en caracteres individuales.
         
         Args:
             image: Imagen en escala de grises (numpy array)
         
         Returns:
-            Lista de imagenes de caracteres (28x28 cada una)
+            Lista de líneas, cada una con una lista de imágenes de caracteres (28x28 cada una)
         """
         if image.size == 0:
             return []
@@ -49,10 +49,53 @@ class SimpleImageSegmenter:
             print(f"DEBUG - Shape imagen: {image.shape}")
             print(f"DEBUG - Min/Max binaria: {np.min(binary)}/{np.max(binary)}")
         
-        if white_pixels < 10:  # Al menos 10 pixeles blancos
+        if white_pixels < 10:
             if self.debug:
                 print("DEBUG - Muy pocos pixeles blancos, retornando vacio")
             return []
+        
+        # Encontrar límites de líneas
+        line_boundaries = self._find_line_boundaries(binary)
+        
+        if self.debug:
+            print(f"DEBUG - Líneas encontradas: {len(line_boundaries)}")
+            print(f"DEBUG - Line boundaries: {line_boundaries}")
+        
+        if not line_boundaries:
+            return []
+        
+        # Segmentar cada línea en caracteres
+        all_lines = []
+        for y_start, y_end in line_boundaries:
+            line_img = self._extract_line(binary, y_start, y_end)
+            characters = self.segment_line(line_img)
+            if characters:  # Solo agregar si tiene caracteres
+                all_lines.append(characters)
+        
+        return all_lines
+    
+    def segment_line(self, image: np.ndarray) -> List[np.ndarray]:
+        """
+        Segmentar una línea de texto en caracteres individuales.
+        
+        Args:
+            image: Imagen de una línea en escala de grises (numpy array)
+        
+        Returns:
+            Lista de imagenes de caracteres (28x28 cada una)
+        """
+        if image.size == 0:
+            return []
+        
+        # Asegurar que es escala de grises
+        if len(image.shape) == 3:
+            image = np.mean(image, axis=2).astype(np.uint8)
+        
+        # Si no está binarizada, binarizar
+        if not np.array_equal(np.unique(image), [0, 255]) and len(np.unique(image)) > 2:
+            binary = self._binarize(image)
+        else:
+            binary = image
         
         # Encontrar limites de caracteres
         boundaries = self._find_boundaries(binary)
@@ -248,3 +291,57 @@ class SimpleImageSegmenter:
         canvas[y_offset:y_offset+h, x_offset:x_offset+w] = char_img
         
         return canvas
+    
+    def _find_line_boundaries(self, binary: np.ndarray) -> List[tuple]:
+        """Encontrar límites de líneas usando proyección horizontal."""
+        # Proyección horizontal (contar píxeles blancos por fila)
+        projection = np.sum(binary > 0, axis=1)
+        
+        if self.debug:
+            print(f"DEBUG - Projection horizontal shape: {projection.shape}")
+            print(f"DEBUG - Projection max: {np.max(projection)}, min: {np.min(projection)}")
+        
+        # Detectar filas con contenido vs filas vacías
+        has_content = projection > 0
+        
+        # Encontrar regiones continuas de contenido (líneas)
+        boundaries = []
+        in_line = False
+        start = 0
+        min_line_height = 5  # Altura mínima de una línea
+        
+        for i, has_pixel in enumerate(has_content):
+            if has_pixel and not in_line:
+                # Inicio de una línea
+                start = i
+                in_line = True
+            elif not has_pixel and in_line:
+                # Fin de una línea
+                if (i - start) >= min_line_height:
+                    boundaries.append((start, i))
+                in_line = False
+        
+        # Si termina con contenido
+        if in_line and (len(has_content) - start) >= min_line_height:
+            boundaries.append((start, len(has_content)))
+        
+        if self.debug:
+            print(f"DEBUG - Line boundaries encontrados: {len(boundaries)}")
+        
+        return boundaries
+    
+    def _extract_line(self, image: np.ndarray, y_start: int, y_end: int) -> np.ndarray:
+        """Extraer una línea de la imagen."""
+        line_img = image[y_start:y_end, :]
+        
+        # Recortar columnas vacías a los lados
+        cols_with_content = np.any(line_img > 0, axis=0)
+        if not np.any(cols_with_content):
+            return np.zeros((1, 1), dtype=np.uint8)
+        
+        first_col = np.argmax(cols_with_content)
+        last_col = len(cols_with_content) - np.argmax(cols_with_content[::-1]) - 1
+        
+        line_img = line_img[:, first_col:last_col+1]
+        
+        return line_img

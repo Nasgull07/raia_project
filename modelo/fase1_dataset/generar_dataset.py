@@ -236,16 +236,16 @@ def main():
             samples = procesar_imagen(img_path, segmenter)
             all_samples.extend(samples)
         
-        print(f"✅ Muestras de palabras originales: {len(all_samples)}")
+        print(f"[OK] Muestras de palabras originales: {len(all_samples)}")
     else:
-        print("⚠️  No se encontró directorio de imágenes originales")
+        print("[AVISO] No se encontró directorio de imágenes originales")
     
     print()
     
     # Procesar imágenes con puntuación
     if IMAGES_PUNTUACION_DIR.exists():
         image_files_punt = list(IMAGES_PUNTUACION_DIR.glob("palabra_*.png"))
-        print(f"🖼️  Imágenes de palabras con puntuación: {len(image_files_punt)}")
+        print(f"[INFO] Imágenes de palabras con puntuación: {len(image_files_punt)}")
         
         segmenter = SimpleImageSegmenter()
         samples_antes = len(all_samples)
@@ -254,14 +254,14 @@ def main():
             samples = procesar_imagen(img_path, segmenter)
             all_samples.extend(samples)
         
-        print(f"✅ Nuevas muestras con puntuación: {len(all_samples) - samples_antes}")
+        print(f"[OK] Nuevas muestras con puntuación: {len(all_samples) - samples_antes}")
         
         # Procesar caracteres individuales (ahora también pasan por el segmentador)
         samples_chars = procesar_caracteres_individuales(IMAGES_PUNTUACION_DIR, segmenter)
         all_samples.extend(samples_chars)
-        print(f"✅ Muestras de caracteres individuales: {len(samples_chars)}")
+        print(f"[OK] Muestras de caracteres individuales: {len(samples_chars)}")
     else:
-        print("⚠️  No se encontró directorio de puntuación")
+        print("[AVISO] No se encontró directorio de puntuación")
         print("    Ejecuta primero: python generar_con_puntuacion.py")
     
     print()
