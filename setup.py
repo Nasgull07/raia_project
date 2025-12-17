@@ -7,8 +7,9 @@ venv_path = os.path.join('.venv', 'Scripts')
 
 # Verifica si el entorno virtual existe
 if not os.path.exists(venv_path):
-    raise FileNotFoundError("El entorno virtual no existe. Por favor, crea el entorno virtual en '.venv'.")
-
+    raise FileNotFoundError("El entorno virtual no existe. Por favor, crea el entorno virtual en '.venv'." 
+                            "Intenta ejecutar setup.py despues de crear el entorno virtual ejecutando el siguiente comando en la terminal:"
+                            "python -m venv .venv")
 # Rutas a los ejecutables dentro del entorno virtual
 pip_executable = os.path.join(venv_path, 'pip.exe')
 python_executable = os.path.join(venv_path, 'python.exe')
