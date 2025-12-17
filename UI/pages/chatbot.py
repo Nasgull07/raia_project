@@ -31,6 +31,17 @@ if 'chat_messages' not in st.session_state:
 if 'esperando_imagen' not in st.session_state:
     st.session_state.esperando_imagen = False
 
+# Inicializar historial de reconocimientos si no existe (para el dashboard)
+if 'historial_reconocimientos' not in st.session_state:
+    st.session_state.historial_reconocimientos = []
+
+if 'estadisticas' not in st.session_state:
+    st.session_state.estadisticas = {
+        'total_reconocimientos': 0,
+        'total_caracteres': 0,
+        'idiomas_detectados': {}
+    }
+
 # Función para agregar mensajes
 def agregar_mensaje(rol, contenido, imagen=None):
     """
@@ -89,22 +100,50 @@ if uploaded_file is not None:
         # Reconocer texto usando la API (devuelve tupla: texto, confidencias, idioma)
         texto, confidencias, idioma = reconocer_texto_api(img)
         
-        if texto:
+        if texto and texto.strip():  # Verificar que no esté vacío
             # Calcular confianza promedio
-            confianza_promedio = sum(confidencias) / len(confidencias) if confidencias else 0
+            import numpy as np
+            confianza_promedio = np.mean(confidencias) if confidencias else 0
             
             # Respuesta minimalista del asistente
             respuesta = f"""📝 **Texto:** {texto}
 
 🌍 **Idioma:** {idioma}
-📊 **Confianza:** {confianza_promedio:.0f}%"""
+📊 **Confianza:** {confianza_promedio*100:.0f}%"""
             
             agregar_mensaje("assistant", respuesta)
+            
+            # Guardar en historial (igual que en app.py)
+            if 'historial_reconocimientos' in st.session_state:
+                from datetime import datetime
+                num_caracteres = len([c for c in texto if c != '\n'])
+                reconocimiento = {
+                    'timestamp': datetime.now(),
+                    'texto': texto,
+                    'confianza_promedio': confianza_promedio,
+                    'idioma': idioma,
+                    'num_caracteres': num_caracteres
+                }
+                st.session_state.historial_reconocimientos.append(reconocimiento)
+                
+                # Actualizar estadísticas
+                st.session_state.estadisticas['total_reconocimientos'] += 1
+                st.session_state.estadisticas['total_caracteres'] += num_caracteres
+                if idioma not in st.session_state.estadisticas['idiomas_detectados']:
+                    st.session_state.estadisticas['idiomas_detectados'][idioma] = 0
+                st.session_state.estadisticas['idiomas_detectados'][idioma] += 1
         else:
-            agregar_mensaje("assistant", "❌ No se detectó texto en la imagen.")
+            # Agregar información de debug
+            import numpy as np
+            img_array = np.array(img.convert('L'))
+            debug_info = f"\n\n🔍 **Debug:**\n- Tamaño: {img.size}\n- Shape: {img_array.shape}\n- Min/Max: {np.min(img_array)}/{np.max(img_array)}"
+            agregar_mensaje("assistant", f"❌ No se detectó texto en la imagen.{debug_info}\n\n💡 **Consejos:**\n- Texto negro sobre fondo blanco\n- Imagen clara y legible\n- Revisa los logs de FastAPI para más detalles")
     
     except Exception as e:
-        agregar_mensaje("assistant", f"⚠️ Error: `{str(e)}`")
+        import traceback
+        error_detail = traceback.format_exc()
+        agregar_mensaje("assistant", f"⚠️ Error al procesar la imagen:\n```\n{str(e)}\n```\n\n🔍 Ver terminal de FastAPI para más detalles.")
+        print(f"Error en chatbot: {error_detail}")
     
     # Limpiar el uploader y rerun
     st.session_state.pop('chat_uploader', None)

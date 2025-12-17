@@ -152,10 +152,10 @@ if historial:
         {
             'ID': i+1,
             'Texto': h['texto'][:30] + '...' if len(h['texto']) > 30 else h['texto'],
-            'Longitud': len(h['texto']),
+            'Longitud': h.get('num_caracteres', len(h['texto'])),
             'Confianza': f"{h['confianza_promedio']*100:.1f}%",
             'Idioma': h.get('idioma', 'N/A'),
-            'Timestamp': h.get('timestamp', 'N/A')
+            'Timestamp': h['timestamp'].strftime('%H:%M:%S') if 'timestamp' in h else 'N/A'
         }
         for i, h in enumerate(historial)
     ])
@@ -235,7 +235,6 @@ with col_ctrl2:
             st.session_state.estadisticas = {
                 'total_reconocimientos': 0,
                 'total_caracteres': 0,
-                'confianza_promedio': 0.0,
                 'idiomas_detectados': {}
             }
             st.session_state.confirmar_limpieza = False

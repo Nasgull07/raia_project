@@ -1,42 +1,29 @@
 """
-Interfaz Streamlit para probar el modelo OCR
+Interfaz Streamlit para probar el modelo OCR usando FastAPI
 """
 
 import sys
-import os
 from pathlib import Path
 import numpy as np
-import pickle
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from langdetect import detect, DetectorFactory
-import requests
+import hashlib
 from utils.sidebar_common import render_sidebar
+from utils.api_utils import verificar_api, reconocer_texto_api
 
 # Añadir directorio raíz del proyecto al path
 project_root = Path(__file__).resolve().parent.parent
-segmenter_path = project_root / "modelo" / "fase3_evaluacion"
 
-# Debug: verificar que los paths existen
-if not segmenter_path.exists():
-    raise ImportError(f"Segmenter directory not found at: {segmenter_path}")
+# Determinar el ejecutable de Python correcto
+venv_python = project_root / ".venv" / "Scripts" / "python.exe"
+if venv_python.exists():
+    PYTHON_EXECUTABLE = str(venv_python)
+else:
+    PYTHON_EXECUTABLE = sys.executable  # Fallback al Python actual
 
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(segmenter_path))
-
-# Importar usando importlib para mejor control
-import importlib.util
-spec = importlib.util.spec_from_file_location(
-    "simple_segmenter", 
-    str(segmenter_path / "simple_segmenter.py")
-)
-simple_segmenter = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(simple_segmenter)
-SimpleImageSegmenter = simple_segmenter.SimpleImageSegmenter
-
-# Paths
+# Paths para configuración inicial
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # Configuración de la página
 st.set_page_config(
@@ -48,47 +35,36 @@ st.set_page_config(
 # Fijar semilla para resultados consistentes en langdetect
 DetectorFactory.seed = 0
 
-def verificar_conexion_api(api_url):
-    """Verifica si la API FastAPI está disponible."""
-    try:
-        response = requests.get(f"{api_url}/health", timeout=2)
-        if response.status_code == 200:
-            data = response.json()
-            return True, data
-        else:
-            return False, None
-    except requests.exceptions.ConnectionError:
-        return False, {"error": "No se pudo conectar"}
-    except requests.exceptions.Timeout:
-        return False, {"error": "Timeout"}
-    except Exception as e:
-        return False, {"error": str(e)}
+def calcular_hash_imagen(img):
+    """Calcula un hash MD5 de una imagen PIL para usarlo como clave de caché."""
+    # Convertir la imagen a bytes
+    img_array = np.array(img)
+    img_bytes = img_array.tobytes()
+    # Calcular hash MD5
+    return hashlib.md5(img_bytes).hexdigest()
 
-@st.cache_resource
-def cargar_modelo():
-    """Carga el modelo y el scaler."""
-    model_path = MODELS_DIR / "modelo.pkl"
-    scaler_path = MODELS_DIR / "scaler.pkl"
-    mapping_path = DATA_DIR / "mapping.txt"
+@st.cache_data(max_entries=10, show_spinner=False)
+def reconocer_texto_cacheado(img_hash, img_array_bytes, img_shape):
+    """
+    Versión cacheada de reconocer_texto_api.
+    Cachea las últimas 10 predicciones basándose en el hash de la imagen.
     
-    if not model_path.exists():
-        st.error("Modelo no encontrado. Ejecuta primero: `python scripts/2_entrenar_modelo.py`")
-        st.stop()
+    Args:
+        img_hash: Hash MD5 de la imagen (para identificación única)
+        img_array_bytes: Array de imagen como bytes (para reconstrucción)
+        img_shape: Forma del array original
     
-    with open(model_path, 'rb') as f:
-        model = pickle.load(f)
+    Returns:
+        Tupla (texto_reconocido, confidencias, idioma)
+    """
+    # Reconstruir la imagen PIL desde bytes
+    img_array = np.frombuffer(img_array_bytes, dtype=np.uint8).reshape(img_shape)
+    img = Image.fromarray(img_array, mode='L')
     
-    with open(scaler_path, 'rb') as f:
-        scaler = pickle.load(f)
-    
-    # Cargar mapping
-    label_mapping = {}
-    with open(mapping_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            label, letter = line.strip().split()
-            label_mapping[int(label)] = letter
-    
-    return model, scaler, label_mapping
+    # Llamar a la API
+    return reconocer_texto_api(img)
+
+# Función ya no necesaria, usamos verificar_api() de api_utils
 
 def generar_imagen_texto(texto, font_size=60):
     """Genera una imagen con el texto proporcionado (soporta saltos de línea)."""
@@ -154,67 +130,45 @@ def detectar_idioma(texto):
     except:
         return "Desconocido"
 
-def reconocer_texto(img_array, model, scaler, label_mapping):
-    """Reconoce texto de una imagen (soporta múltiples líneas)."""
-    # Segmentar (ahora devuelve lista de líneas)
-    segmenter = SimpleImageSegmenter()
-    lineas_segmentadas = segmenter.segment_image(img_array)
+def guardar_reconocimiento(texto_reconocido, confianza_promedio, idioma, num_caracteres):
+    """Guarda el reconocimiento en el historial de session_state."""
+    from datetime import datetime
     
-    if not lineas_segmentadas:
-        return None, [], [], None
+    # Crear registro del reconocimiento
+    reconocimiento = {
+        'timestamp': datetime.now(),
+        'texto': texto_reconocido,
+        'confianza_promedio': confianza_promedio,
+        'idioma': idioma,
+        'num_caracteres': num_caracteres
+    }
     
-    # Procesar cada línea
-    todas_las_lineas = []
-    todas_confidencias = []
-    todas_letras_imgs = []
+    # Agregar al historial
+    st.session_state.historial_reconocimientos.append(reconocimiento)
     
-    for linea_chars in lineas_segmentadas:
-        texto_linea = []
-        confidencias_linea = []
-        
-        for letra_img in linea_chars:
-            # Asegurar 28x28
-            if letra_img.shape != (28, 28):
-                img_pil = Image.fromarray(letra_img.astype(np.uint8))
-                img_pil = img_pil.resize((28, 28), Image.LANCZOS)
-                letra_img = np.array(img_pil)
-            
-            # INVERTIR COLORES
-            letra_img = 255 - letra_img
-            
-            # Guardar para visualización
-            todas_letras_imgs.append(letra_img)
-            
-            # Aplanar y normalizar
-            letra_flat = letra_img.flatten().reshape(1, -1)
-            letra_scaled = scaler.transform(letra_flat)
-            
-            # Predecir
-            pred = model.predict(letra_scaled)[0]
-            proba = model.predict_proba(letra_scaled)[0]
-            
-            letra = label_mapping[pred]
-            pred_idx = np.where(model.classes_ == pred)[0][0]
-            confianza = proba[pred_idx]
-            
-            texto_linea.append(letra)
-            confidencias_linea.append(confianza)
-        
-        # Reemplazar 'ESPACIO' por espacio real en la línea
-        texto_linea_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_linea])
-        todas_las_lineas.append(texto_linea_final)
-        todas_confidencias.extend(confidencias_linea)
+    # Actualizar estadísticas
+    st.session_state.estadisticas['total_reconocimientos'] += 1
+    st.session_state.estadisticas['total_caracteres'] += num_caracteres
     
-    # Unir líneas con salto de línea
-    texto_final = '\n'.join(todas_las_lineas)
-    confianza_promedio = np.mean(todas_confidencias) if todas_confidencias else 0
-    
-    # Detectar idioma
-    idioma = detectar_idioma(texto_final)
-    
-    return texto_final, todas_confidencias, todas_letras_imgs, idioma
+    # Actualizar idiomas detectados
+    if idioma not in st.session_state.estadisticas['idiomas_detectados']:
+        st.session_state.estadisticas['idiomas_detectados'][idioma] = 0
+    st.session_state.estadisticas['idiomas_detectados'][idioma] += 1
+
+# La función reconocer_texto ya no es necesaria, usamos la API
 
 def main():
+    # Inicializar session_state para el historial
+    if 'historial_reconocimientos' not in st.session_state:
+        st.session_state.historial_reconocimientos = []
+    
+    if 'estadisticas' not in st.session_state:
+        st.session_state.estadisticas = {
+            'total_reconocimientos': 0,
+            'total_caracteres': 0,
+            'idiomas_detectados': {}
+        }
+    
     # Título
     st.title("🔤 OCR - Reconocedor de Texto")
     st.markdown("### Prueba el modelo de reconocimiento de texto")
@@ -252,7 +206,7 @@ def main():
                 with log_expander:
                     st.markdown("#### 🎨 Generando Imágenes")
                     result1 = subprocess.run(
-                        ["python", "generar_con_puntuacion.py"],
+                        [PYTHON_EXECUTABLE, "generar_con_puntuacion.py"],
                         cwd=str(fase1_dir),
                         capture_output=True,
                         text=True
@@ -271,7 +225,7 @@ def main():
                 with log_expander:
                     st.markdown("#### 📊 Generando Dataset")
                     result2 = subprocess.run(
-                        ["python", "generar_dataset.py"],
+                        [PYTHON_EXECUTABLE, "generar_dataset.py"],
                         cwd=str(fase1_dir),
                         capture_output=True,
                         text=True
@@ -291,7 +245,7 @@ def main():
                 with log_expander:
                     st.markdown("#### 🤖 Entrenando Modelo")
                     result3 = subprocess.run(
-                        ["python", "entrenar_modelo.py"],
+                        [PYTHON_EXECUTABLE, "entrenar_modelo.py"],
                         cwd=str(fase2_dir),
                         capture_output=True,
                         text=True
@@ -324,7 +278,7 @@ def main():
                         import subprocess
                         fase1_dir = project_root / "modelo" / "fase1_dataset"
                         result = subprocess.run(
-                            ["python", "generar_con_puntuacion.py"],
+                            [PYTHON_EXECUTABLE, "generar_con_puntuacion.py"],
                             cwd=str(fase1_dir),
                             capture_output=True,
                             text=True
@@ -340,7 +294,7 @@ def main():
                         import subprocess
                         fase1_dir = project_root / "modelo" / "fase1_dataset"
                         result = subprocess.run(
-                            ["python", "generar_dataset.py"],
+                            [PYTHON_EXECUTABLE, "generar_dataset.py"],
                             cwd=str(fase1_dir),
                             capture_output=True,
                             text=True
@@ -356,7 +310,7 @@ def main():
                         import subprocess
                         fase2_dir = project_root / "modelo" / "fase2_entrenamiento"
                         result = subprocess.run(
-                            ["python", "entrenar_modelo.py"],
+                            [PYTHON_EXECUTABLE, "entrenar_modelo.py"],
                             cwd=str(fase2_dir),
                             capture_output=True,
                             text=True
@@ -371,9 +325,13 @@ def main():
     
     st.markdown("---")
     
-    # Cargar modelo
-    with st.spinner("Cargando modelo..."):
-        model, scaler, label_mapping = cargar_modelo()
+    # Verificar que la API esté disponible
+    api_ok = verificar_api()
+    if not api_ok:
+        st.error("⚠️ La API FastAPI no está disponible. Inicia el servidor para continuar.")
+        st.code("cd FastAPI && python main.py", language="bash")
+        st.info("💡 La aplicación ahora usa FastAPI para todas las predicciones")
+        st.stop()
     
     # Tabs para diferentes modos
     tab1, tab2, tab3 = st.tabs(["📝 Escribir Texto", "📷 Subir Imagen", "📁 Explorador de Archivos"])
@@ -381,6 +339,56 @@ def main():
     # Tab 1: Escribir texto
     with tab1:
         st.markdown("### Escribe texto para generar y reconocer")
+        
+        # Inicializar contadores de caché en session_state
+        if 'cache_hits' not in st.session_state:
+            st.session_state.cache_hits = 0
+        if 'cache_misses' not in st.session_state:
+            st.session_state.cache_misses = 0
+        
+        # Información de caché
+        col_info1, col_info2, col_info3 = st.columns([2, 1, 1])
+        with col_info1:
+            st.info("💾 Las últimas 10 predicciones se guardan en caché para optimizar rendimiento")
+        with col_info2:
+            total = st.session_state.cache_hits + st.session_state.cache_misses
+            if total > 0:
+                tasa = (st.session_state.cache_hits / total) * 100
+                st.metric("Tasa de aciertos", f"{tasa:.0f}%", 
+                         delta=f"{st.session_state.cache_hits}/{total}")
+        with col_info3:
+            if st.button("🗑️ Limpiar Caché", help="Elimina todas las predicciones guardadas"):
+                reconocer_texto_cacheado.clear()
+                st.session_state.cache_hits = 0
+                st.session_state.cache_misses = 0
+                st.success("✅ Caché limpiada")
+                st.rerun()
+        
+        # Expandible con información sobre caché
+        with st.expander("ℹ️ ¿Cómo funciona el sistema de caché?"):
+            st.markdown("""
+            ### 💾 Sistema de Caché Inteligente
+            
+            **¿Qué es?**
+            - El caché almacena las últimas **10 predicciones** realizadas
+            - Usa el contenido de la imagen (hash MD5) como identificador único
+            
+            **¿Por qué es útil?**
+            - ⚡ **Velocidad**: Si generas la misma imagen dos veces, no vuelve a llamar a la API
+            - 🔄 **Eficiencia**: Ideal para imágenes sintéticas repetitivas (ej: "Hola" con mismo tamaño)
+            - 📊 **Ahorro**: Reduce llamadas innecesarias a FastAPI
+            
+            **¿Cuándo se usa?**
+            - Si escribes "Hola" con tamaño 60 → Se guarda en caché
+            - Si vuelves a escribir "Hola" con tamaño 60 → ⚡ Carga instantánea desde caché
+            - Si escribes "Hola" con tamaño 70 → Nueva predicción (diferente imagen)
+            
+            **Gestión:**
+            - Usa el botón "🗑️ Limpiar Caché" para resetear todas las predicciones guardadas
+            - El caché se limpia automáticamente al reiniciar la aplicación
+            """)
+        
+        st.markdown("---")
         
         col1, col2 = st.columns([2, 1])
         
@@ -415,13 +423,33 @@ def main():
                     st.markdown("#### 🖼️ Imagen Generada:")
                     st.image(img, use_container_width=False)
                     
-                    # Reconocer
-                    with st.spinner("Reconociendo..."):
-                        texto_reconocido, confidencias, letras_imgs, idioma = reconocer_texto(
-                            img_array, model, scaler, label_mapping
+                    # Calcular hash de la imagen para caché
+                    img_hash = calcular_hash_imagen(img)
+                    img_bytes = img_array.tobytes()
+                    
+                    # Verificar si ya está en caché usando el hash
+                    cache_key = f"cache_{img_hash}"
+                    fue_cache_hit = cache_key in st.session_state
+                    
+                    # Guardar estado del caché antes de la llamada
+                    if fue_cache_hit:
+                        st.session_state.cache_hits += 1
+                    else:
+                        st.session_state.cache_misses += 1
+                        # Marcar que este hash fue procesado
+                        st.session_state[cache_key] = True
+                    
+                    # Reconocer usando API con caché
+                    with st.spinner("Reconociendo con API..."):
+                        texto_reconocido, confidencias, idioma = reconocer_texto_cacheado(
+                            img_hash, img_bytes, img_array.shape
                         )
                     
-                    if texto_reconocido is None:
+                    # Mostrar si se usó caché
+                    if fue_cache_hit:
+                        st.success("⚡ Predicción cargada desde caché (sin llamada a API)")
+                    
+                    if texto_reconocido is None or not texto_reconocido.strip():
                         st.error("❌ No se pudieron detectar letras")
                     else:
                         # El texto reconocido ya viene con saltos de línea desde segment_image
@@ -454,6 +482,11 @@ def main():
                             st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
                         with col_m2:
                             st.metric("🌍 Idioma Detectado", idioma)
+                        
+                        # Guardar reconocimiento en historial
+                        num_caracteres = len([c for c in texto_reconocido_final if c != '\n'])
+                        guardar_reconocimiento(texto_reconocido_final, confianza_promedio, idioma, num_caracteres)
+                        
                         # Verificar si es correcto
                         es_correcto = texto_input == texto_reconocido_final
                         if es_correcto:
@@ -461,22 +494,17 @@ def main():
                         else:
                             st.error("❌ Reconocimiento incorrecto")
                         
-                        # Mostrar letras individuales
-                        st.markdown("#### 🔤 Letras Detectadas:")
-                        # Crear lista de letras sin saltos de línea para emparejar con imágenes
-                        letras_sin_saltos = [c for c in texto_reconocido_final if c != '\n']
-                        st.markdown(f"**Total de caracteres reconocidos: {len(letras_sin_saltos)}**")
-                        
-                        # Mostrar todas las letras en filas de 10
-                        num_letras = len(letras_imgs)
-                        for fila in range(0, num_letras, 10):
-                            cols = st.columns(min(10, num_letras - fila))
-                            for i, col in enumerate(cols):
-                                idx = fila + i
-                                if idx < num_letras:
-                                    with col:
-                                        letra_display = letras_sin_saltos[idx] if idx < len(letras_sin_saltos) else "?"
-                                        st.image(letras_imgs[idx], caption=f"{letra_display}\n{confidencias[idx]*100:.0f}%", width=50)
+                        # Mostrar detalles de confianza
+                        st.markdown("#### 📊 Detalles de Confianza")
+                        if confidencias:
+                            import pandas as pd
+                            letras_sin_saltos = [c for c in texto_reconocido_final if c != '\n']
+                            df_conf = pd.DataFrame({
+                                'Posición': range(1, len(letras_sin_saltos) + 1),
+                                'Carácter': [c if c != ' ' else '␣' for c in letras_sin_saltos],
+                                'Confianza': [f"{c*100:.1f}%" for c in confidencias[:len(letras_sin_saltos)]]
+                            })
+                            st.dataframe(df_conf, use_container_width=True, hide_index=True)
     
     # Tab 2: Subir imagen
     with tab2:
@@ -499,16 +527,13 @@ def main():
             
             # Reconocer
             if st.button("🔍 Reconocer Texto", type="primary", key="btn_upload"):
-                with st.spinner("Reconociendo..."):
-                    texto_reconocido, confidencias, letras_imgs, idioma = reconocer_texto(
-                        img_array, model, scaler, label_mapping
-                    )
+                # Reconocer usando API
+                with st.spinner("Reconociendo con API..."):
+                    texto_reconocido_final, confidencias, idioma = reconocer_texto_api(img)
                 
-                if texto_reconocido is None:
+                if texto_reconocido_final is None or not texto_reconocido_final.strip():
                     st.error("❌ No se pudieron detectar letras")
                 else:
-                    # Reemplazar 'ESPACIO' por espacio real
-                    texto_reconocido_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_reconocido])
                     # Resultados
                     st.markdown("---")
                     st.markdown("### 📊 Resultados")
@@ -525,21 +550,21 @@ def main():
                         confianza_promedio = np.mean(confidencias)
                         st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
                         st.metric("🌍 Idioma", idioma)
-                    # Mostrar letras individuales
-                    st.markdown("#### 🔤 Letras Detectadas:")
-                    # Filtrar saltos de línea para emparejar correctamente con imágenes
+                    
+                    # Guardar reconocimiento en historial
+                    num_caracteres = len([c for c in texto_reconocido_final if c != '\n'])
+                    guardar_reconocimiento(texto_reconocido_final, confianza_promedio, idioma, num_caracteres)
+                    
+                    # Mostrar tabla de confianzas
+                    st.markdown("#### 📊 Tabla de Confianzas:")
+                    import pandas as pd
                     letras_sin_saltos = [c for c in texto_reconocido_final if c != '\n']
-                    st.markdown(f"**Total de caracteres reconocidos: {len(letras_sin_saltos)}**")
-                    # Mostrar todas las letras en filas de 10
-                    num_letras = len(letras_imgs)
-                    for fila in range(0, num_letras, 10):
-                        cols = st.columns(min(10, num_letras - fila))
-                        for i, col in enumerate(cols):
-                            idx = fila + i
-                            if idx < num_letras:
-                                with col:
-                                    letra_display = letras_sin_saltos[idx] if idx < len(letras_sin_saltos) else "?"
-                                    st.image(letras_imgs[idx], caption=f"{letra_display}\n{confidencias[idx]*100:.0f}%", width=50)
+                    df_conf = pd.DataFrame({
+                        'Posición': range(1, len(letras_sin_saltos) + 1),
+                        'Carácter': [c if c != ' ' else '␣' for c in letras_sin_saltos],
+                        'Confianza': [f"{c*100:.1f}%" for c in confidencias[:len(letras_sin_saltos)]]
+                    })
+                    st.dataframe(df_conf, use_container_width=True, hide_index=True)
         else:
             # Mostrar consejos cuando no hay archivo cargado
             st.info("""
@@ -598,12 +623,11 @@ def main():
                     
                     # Reconocer
                     if st.button("🔍 Reconocer Texto", type="primary", key="btn_file"):
-                        with st.spinner("Reconociendo..."):
-                            texto_reconocido, confidencias, letras_imgs = reconocer_texto(
-                                img_array, model, scaler, label_mapping
-                            )
+                        # Reconocer usando API
+                        with st.spinner("Reconociendo con API..."):
+                            texto_reconocido, confidencias, idioma = reconocer_texto_api(img)
                         
-                        if texto_reconocido is None:
+                        if texto_reconocido is None or not texto_reconocido.strip():
                             st.error("❌ No se pudieron detectar letras")
                         else:
                             # Resultados
@@ -624,31 +648,28 @@ def main():
                             with col2:
                                 confianza_promedio = np.mean(confidencias)
                                 st.metric("🎯 Confianza Promedio", f"{confianza_promedio*100:.1f}%")
+                                st.metric("🌍 Idioma", idioma)
                             
-                            # Mostrar letras individuales
-                            st.markdown("#### 🔤 Letras Detectadas:")
-                            st.markdown(f"**Total de letras reconocidas: {len(texto_reconocido)}**")
+                            # Guardar reconocimiento en historial
+                            num_caracteres = len([c for c in texto_reconocido if c != '\n'])
+                            guardar_reconocimiento(texto_reconocido, confianza_promedio, idioma, num_caracteres)
                             
-                            # Mostrar todas las letras en filas de 10
-                            num_letras = len(letras_imgs)
-                            for fila in range(0, num_letras, 10):
-                                cols = st.columns(min(10, num_letras - fila))
-                                for i, col in enumerate(cols):
-                                    idx = fila + i
-                                    if idx < num_letras:
-                                        with col:
-                                            st.image(letras_imgs[idx], caption=f"{texto_reconocido[idx]}\n{confidencias[idx]*100:.0f}%", width=50)
-                            
-                            # Detalles de cada letra
-                            with st.expander("📋 Detalles de cada letra"):
-                                for i, (letra, conf) in enumerate(zip(texto_reconocido, confidencias)):
-                                    st.write(f"**Letra {i+1}:** `{letra}` - Confianza: **{conf*100:.1f}%**")
+                            # Mostrar tabla de confianzas
+                            st.markdown("#### 📊 Tabla de Confianzas:")
+                            import pandas as pd
+                            letras_sin_saltos = [c for c in texto_reconocido if c != '\n']
+                            df_conf = pd.DataFrame({
+                                'Posición': range(1, len(letras_sin_saltos) + 1),
+                                'Carácter': [c if c != ' ' else '␣' for c in letras_sin_saltos],
+                                'Confianza': [f"{c*100:.1f}%" for c in confidencias[:len(letras_sin_saltos)]]
+                            })
+                            st.dataframe(df_conf, use_container_width=True, hide_index=True)
                 
                 except Exception as e:
                     st.error(f"❌ Error al cargar la imagen: {str(e)}")
     
-    # Guardar número de clases en session_state para el sidebar
-    st.session_state['num_clases'] = len(label_mapping)
+    # Número de clases del modelo (91 clases)
+    st.session_state['num_clases'] = 91
     
     # Renderizar sidebar común
     render_sidebar()

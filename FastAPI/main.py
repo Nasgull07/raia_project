@@ -26,13 +26,27 @@ sys.path.insert(0, str(segmenter_path))
 
 # Importar segmentador
 import importlib.util
+import importlib
+
+# Forzar recarga para evitar problemas de caché
 spec = importlib.util.spec_from_file_location(
     "simple_segmenter", 
     str(segmenter_path / "simple_segmenter.py")
 )
 simple_segmenter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(simple_segmenter)
+
+# Recargar el módulo si ya estaba cargado
+if 'simple_segmenter' in sys.modules:
+    simple_segmenter = importlib.reload(simple_segmenter)
+
 SimpleImageSegmenter = simple_segmenter.SimpleImageSegmenter
+
+# Verificar que el segmentador tiene los métodos necesarios
+print(f"✅ SimpleImageSegmenter cargado correctamente")
+print(f"   - Métodos disponibles: {[m for m in dir(SimpleImageSegmenter) if not m.startswith('_')]}")
+if not hasattr(SimpleImageSegmenter, 'segment_image'):
+    raise ImportError("SimpleImageSegmenter no tiene el método segment_image!")
 
 # Inicializar FastAPI
 app = FastAPI(title="OCR API", version="1.0.0")
@@ -113,55 +127,81 @@ def detectar_idioma(texto):
         return "Desconocido"
 
 def reconocer_texto(img_array):
-    """Reconoce texto de una imagen."""
-    # Segmentar
-    segmenter = SimpleImageSegmenter()
-    letras_segmentadas = segmenter.segment_word(img_array)
+    """Reconoce texto de una imagen (soporta múltiples líneas)."""
+    print(f"🔍 DEBUG - Iniciando reconocimiento...")
+    print(f"🔍 DEBUG - Shape imagen: {img_array.shape}")
+    print(f"🔍 DEBUG - Min/Max imagen: {np.min(img_array)}/{np.max(img_array)}")
+    print(f"🔍 DEBUG - Dtype: {img_array.dtype}")
     
-    if not letras_segmentadas:
+    # Segmentar (devuelve lista de líneas)
+    segmenter = SimpleImageSegmenter()
+    segmenter.debug = True  # Activar debug en segmentador
+    lineas_segmentadas = segmenter.segment_image(img_array)
+    
+    print(f"🔍 DEBUG - Líneas segmentadas: {len(lineas_segmentadas) if lineas_segmentadas else 0}")
+    
+    if not lineas_segmentadas:
+        print("❌ DEBUG - No se detectaron líneas")
         return None
     
-    # Predecir cada letra
-    texto_reconocido = []
-    confidencias = []
+    # Procesar cada línea
+    todas_las_lineas = []
+    todas_confidencias = []
+    todos_los_caracteres = []
     
-    for letra_img in letras_segmentadas:
-        # Asegurar 28x28
-        if letra_img.shape != (28, 28):
-            img_pil = Image.fromarray(letra_img.astype(np.uint8))
-            img_pil = img_pil.resize((28, 28), Image.LANCZOS)
-            letra_img = np.array(img_pil)
+    for idx_linea, linea_chars in enumerate(lineas_segmentadas):
+        print(f"🔍 DEBUG - Procesando línea {idx_linea+1}/{len(lineas_segmentadas)} con {len(linea_chars)} caracteres")
+        texto_linea = []
+        confidencias_linea = []
         
-        # Invertir colores
-        letra_img = 255 - letra_img
+        for letra_img in linea_chars:
+            # Asegurar 28x28
+            if letra_img.shape != (28, 28):
+                img_pil = Image.fromarray(letra_img.astype(np.uint8))
+                img_pil = img_pil.resize((28, 28), Image.LANCZOS)
+                letra_img = np.array(img_pil)
+            
+            # Invertir colores
+            letra_img = 255 - letra_img
+            
+            # Aplanar y normalizar
+            letra_flat = letra_img.flatten().reshape(1, -1)
+            letra_scaled = scaler.transform(letra_flat)
+            
+            # Predecir
+            pred = model.predict(letra_scaled)[0]
+            proba = model.predict_proba(letra_scaled)[0]
+            
+            letra = label_mapping[pred]
+            pred_idx = np.where(model.classes_ == pred)[0][0]
+            confianza = proba[pred_idx]
+            
+            texto_linea.append(letra)
+            confidencias_linea.append(float(confianza))
         
-        # Aplanar y normalizar
-        letra_flat = letra_img.flatten().reshape(1, -1)
-        letra_scaled = scaler.transform(letra_flat)
-        
-        # Predecir
-        pred = model.predict(letra_scaled)[0]
-        proba = model.predict_proba(letra_scaled)[0]
-        
-        letra = label_mapping[pred]
-        pred_idx = np.where(model.classes_ == pred)[0][0]
-        confianza = proba[pred_idx]
-        
-        texto_reconocido.append(letra)
-        confidencias.append(float(confianza))
+        # Reemplazar 'ESPACIO' por espacio real en la línea
+        texto_linea_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_linea])
+        todas_las_lineas.append(texto_linea_final)
+        todas_confidencias.extend(confidencias_linea)
+        todos_los_caracteres.extend(texto_linea)
     
-    # Reemplazar 'ESPACIO' por espacio real
-    texto_final = ''.join([' ' if l == 'ESPACIO' else l for l in texto_reconocido])
-    confianza_promedio = float(np.mean(confidencias))
+    # Unir líneas con salto de línea
+    texto_final = '\n'.join(todas_las_lineas)
+    confianza_promedio = float(np.mean(todas_confidencias)) if todas_confidencias else 0
+    
+    print(f"✅ DEBUG - Texto final: '{texto_final}'")
+    print(f"✅ DEBUG - Total caracteres: {len(todos_los_caracteres)}")
+    print(f"✅ DEBUG - Confianza promedio: {confianza_promedio:.2%}")
     
     # Detectar idioma
     idioma = detectar_idioma(texto_final)
+    print(f"✅ DEBUG - Idioma detectado: {idioma}")
     
     return {
         "texto": texto_final,
         "confianza_promedio": confianza_promedio,
-        "letras": texto_reconocido,
-        "confidencias": confidencias,
+        "letras": todos_los_caracteres,
+        "confidencias": todas_confidencias,
         "idioma": idioma
     }
 

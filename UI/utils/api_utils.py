@@ -62,20 +62,28 @@ def reconocer_texto_api(img):
             
             # El idioma ya viene detectado desde la API
             idioma = resultado.get('idioma', 'Desconocido')
+            texto = resultado.get('texto', '')
+            confidencias = resultado.get('confidencias', [])
             
-            return resultado['texto'], resultado['confidencias'], idioma
+            return texto, confidencias, idioma
+        elif response.status_code == 400:
+            # No se detectaron letras
+            return None, [], "Error"
         else:
             st.error(f"❌ Error {response.status_code}: {response.text}")
             return None, [], "Error"
             
     except requests.exceptions.Timeout:
-        st.error("⏱️ Timeout: La API tardó demasiado en responder")
+        st.error("⏱️ Timeout: La API tardó demasiado en responder (>30s)")
         return None, [], "Error"
     except requests.exceptions.ConnectionError:
-        st.error("🔌 Error de conexión: No se puede conectar con la API")
+        st.error("🔌 Error de conexión: No se puede conectar con la API. ¿Está ejecutándose FastAPI en http://localhost:8000?")
         return None, [], "Error"
     except Exception as e:
         st.error(f"❌ Error inesperado: {str(e)}")
+        import traceback
+        with st.expander("🔍 Ver detalles del error"):
+            st.code(traceback.format_exc())
         return None, [], "Error"
 
 def mostrar_resultados(texto_original, texto_reconocido, confidencias, idioma):
