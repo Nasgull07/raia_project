@@ -72,7 +72,7 @@ def cargar_modelo():
     mapping_path = DATA_DIR / "mapping.txt"
     
     if not model_path.exists():
-        st.error("❌ Modelo no encontrado. Ejecuta primero: `python scripts/2_entrenar_modelo.py`")
+        st.error("Modelo no encontrado. Ejecuta primero: `python scripts/2_entrenar_modelo.py`")
         st.stop()
     
     with open(model_path, 'rb') as f:
@@ -224,7 +224,7 @@ def main():
     
     # Panel de utilidades al inicio
     if not model_path.exists():
-        st.warning("⚠️ Modelo no encontrado. Necesitas configurar el proyecto.")
+        st.warning("Modelo no encontrado. Necesitas configurar el proyecto.")
         
         st.markdown("### 🛠️ Configuración Inicial del Proyecto")
         st.info("""
