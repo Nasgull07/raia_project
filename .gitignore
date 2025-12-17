@@ -32,3 +32,6 @@ Thumbs.db
 
 # Notebooks temporales
 *.ipynb_checkpoints
+
+# Entorno virtual
+.venv/

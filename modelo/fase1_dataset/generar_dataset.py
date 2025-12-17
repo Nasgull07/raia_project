@@ -307,6 +307,17 @@ def main():
     df_train.to_csv(train_path, index=False)
     df_test.to_csv(test_path, index=False)
     
+    # Duplicar datos generados
+    df_train = pd.concat([df_train, df_train], ignore_index=True)
+    df_test = pd.concat([df_test, df_test], ignore_index=True)
+
+    # Guardar conjuntos duplicados
+    df_train.to_csv(train_path, index=False)
+    df_test.to_csv(test_path, index=False)
+
+    print(f"[OK] Train duplicado: {len(df_train)} muestras -> {train_path}")
+    print(f"[OK] Test duplicado: {len(df_test)} muestras -> {test_path}")
+    
     # Guardar mapping completo
     with open(mapping_path, 'w', encoding='utf-8') as f:
         for char, label in LETTER_TO_LABEL.items():

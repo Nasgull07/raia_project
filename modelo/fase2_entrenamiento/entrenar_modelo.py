@@ -33,6 +33,14 @@ def main():
     print(f"[OK] Test: {len(df_test)} muestras")
     print()
     
+    # Duplicar datos para usar el doble
+    df_train = pd.concat([df_train, df_train], ignore_index=True)
+    df_test = pd.concat([df_test, df_test], ignore_index=True)
+
+    print(f"[OK] Train duplicado: {len(df_train)} muestras")
+    print(f"[OK] Test duplicado: {len(df_test)} muestras")
+    print()
+    
     # Separar X, y
     X_train = df_train.iloc[:, 1:].values
     y_train = df_train.iloc[:, 0].values
