@@ -395,7 +395,7 @@ def main():
         with col1:
             texto_input = st.text_area(
                 "Texto a reconocer:",
-                value="Hola",
+                value="Dennis  y  Pol\n¿Cómo estáis?",
                 max_chars=200,
                 height=100,
                 help="Escribe tu texto. Usa Enter para saltos de línea"

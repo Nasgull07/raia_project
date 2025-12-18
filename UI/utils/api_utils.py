@@ -6,11 +6,15 @@ import streamlit as st
 import requests
 import io
 from PIL import Image
+import urllib3
+
+# Desactivar advertencias de SSL para certificados autofirmados
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def get_api_url():
     """Obtiene la URL de la API desde session_state o usa el default."""
     if 'api_url' not in st.session_state:
-        st.session_state.api_url = "http://localhost:8000"
+        st.session_state.api_url = "localhost:8000"
     return st.session_state.api_url
 
 # Compatibilidad con código existente
@@ -22,16 +26,56 @@ def API_URL():
 def get_api_base_url():
     return get_api_url()
 
+def _probar_conexion(api_url, endpoint="/health", method="get", **kwargs):
+    """Intenta conectar con HTTP primero, luego HTTPS."""
+    # Si la URL ya tiene protocolo (de verificación previa), usarla directamente primero
+    if "://" in api_url:
+        url = f"{api_url}{endpoint}"
+        try:
+            if method == "get":
+                response = requests.get(url, timeout=kwargs.get('timeout', 2), verify=False)
+            elif method == "post":
+                response = requests.post(url, timeout=kwargs.get('timeout', 30), verify=False, **kwargs)
+            
+            if response.status_code in [200, 201]:
+                return response
+        except Exception as e:
+            # Si falla con el protocolo conocido, intentar los otros
+            print(f"Falló con URL guardada: {e}")
+    
+    # Extraer host:puerto sin protocolo
+    if "://" in api_url:
+        host_port = api_url.split("://", 1)[1]
+    else:
+        host_port = api_url
+    
+    # Intentar HTTP primero, luego HTTPS
+    for protocol in ["http", "https"]:
+        url = f"{protocol}://{host_port}{endpoint}"
+        try:
+            if method == "get":
+                response = requests.get(url, timeout=kwargs.get('timeout', 2), verify=False)
+            elif method == "post":
+                response = requests.post(url, timeout=kwargs.get('timeout', 30), verify=False, **kwargs)
+            
+            if response.status_code in [200, 201]:
+                # Actualizar session_state con protocolo que funcionó
+                st.session_state['api_url'] = f"{protocol}://{host_port}"
+                return response
+        except Exception as e:
+            print(f"Falló {protocol}: {e}")
+            continue
+    
+    return None
+
 @st.cache_data(ttl=30)  # Cache por 30 segundos
 def verificar_api(api_url=None):
     """Verifica si la API está disponible."""
     if api_url is None:
         api_url = get_api_url()
-    try:
-        response = requests.get(f"{api_url}/health", timeout=2)
-        return response.status_code == 200
-    except:
-        return False
+    
+    response = _probar_conexion(api_url, endpoint="/health", method="get")
+    return response is not None and response.status_code == 200
 
 def reconocer_texto_api(img):
     """
@@ -44,6 +88,11 @@ def reconocer_texto_api(img):
         tuple: (texto, confidencias, idioma)
     """
     api_url = get_api_url()
+    
+    # Debug: mostrar qué URL se está usando
+    debug_info = st.empty()
+    debug_info.caption(f"🔗 Intentando conectar a: `{api_url}`")
+    
     try:
         # Convertir imagen PIL a bytes en formato PNG
         img_byte_arr = io.BytesIO()
@@ -53,11 +102,14 @@ def reconocer_texto_api(img):
         # Preparar el archivo para envío multipart/form-data
         files = {'file': ('image.png', img_byte_arr, 'image/png')}
         
-        # Enviar petición POST a FastAPI con progreso
+        # Enviar petición POST a FastAPI con progreso (prueba HTTP y HTTPS)
         with st.spinner('🔄 Procesando imagen en el servidor...'):
-            response = requests.post(f"{api_url}/upload-image/", files=files, timeout=30)
+            response = _probar_conexion(api_url, endpoint="/upload-image/", method="post", files=files)
         
-        if response.status_code == 200:
+        # Limpiar debug
+        debug_info.empty()
+        
+        if response and response.status_code == 200:
             resultado = response.json()
             
             # El idioma ya viene detectado desde la API
@@ -66,11 +118,14 @@ def reconocer_texto_api(img):
             confidencias = resultado.get('confidencias', [])
             
             return texto, confidencias, idioma
-        elif response.status_code == 400:
+        elif response and response.status_code == 400:
             # No se detectaron letras
             return None, [], "Error"
-        else:
+        elif response:
             st.error(f"❌ Error {response.status_code}: {response.text}")
+            return None, [], "Error"
+        else:
+            st.error("❌ No se pudo conectar a la API con HTTP ni HTTPS")
             return None, [], "Error"
             
     except requests.exceptions.Timeout:
