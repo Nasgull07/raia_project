@@ -16,7 +16,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 sys.path.append('..')
-from utils.api_utils import verificar_api
 from utils.sidebar_common import render_sidebar
 
 st.title("📊 Dashboard de Estadísticas")
@@ -245,11 +244,8 @@ with col_ctrl2:
             st.warning("⚠️ Haz clic de nuevo para confirmar")
 
 with col_ctrl3:
-    # Estado de la API
-    if verificar_api():
-        st.success("✅ API Activa")
-    else:
-        st.error("❌ API Inactiva")
+    # Estado de la API (solo verificar con el botón del sidebar)
+    st.info("🔌 Usa el botón 'Verificar Conexión' en el sidebar")
 
 # Información sobre el dashboard
 with st.expander("ℹ️ Sobre este Dashboard"):

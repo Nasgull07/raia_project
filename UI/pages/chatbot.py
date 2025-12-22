@@ -12,7 +12,7 @@ Elementos de Streamlit:
 import streamlit as st
 import sys
 sys.path.append('..')
-from utils.api_utils import verificar_api, reconocer_texto_api
+from utils.api_utils import reconocer_texto_api
 from utils.sidebar_common import render_sidebar
 from datetime import datetime
 from PIL import Image
@@ -59,12 +59,7 @@ def agregar_mensaje(rol, contenido, imagen=None):
 if len(st.session_state.chat_messages) == 0:
     agregar_mensaje("assistant", "👋 Sube una imagen para reconocer texto + idioma")
 
-# Verificar estado de la API
-api_ok = verificar_api()
-if not api_ok:
-    st.error("⚠️ La API no está disponible. Inicia FastAPI para usar el chatbot.")
-    st.code("cd FastAPI && uvicorn main:app --reload", language="bash")
-    st.stop()
+# NOTA: La verificación de API ahora solo se hace manualmente con el botón "Verificar Conexión" en el sidebar
 
 # Mostrar historial de chat
 # Justificación: Visualización de conversación con contexto completo

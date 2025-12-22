@@ -48,32 +48,46 @@ def render_sidebar():
     """Renderiza el sidebar común para todas las páginas."""
     with st.sidebar:
         st.markdown("### 🌐 Conexión con API")
+        
+        # Inicializar valores persistentes en session_state si no existen
+        if 'custom_ip_value' not in st.session_state:
+            # Obtener IP local como valor inicial
+            try:
+                hostname = socket.gethostname()
+                local_ip = socket.gethostbyname(hostname)
+                st.session_state['custom_ip_value'] = f"{local_ip}:8000"
+            except:
+                st.session_state['custom_ip_value'] = "192.168.1.100:8000"
+        
+        if 'modo_red_value' not in st.session_state:
+            st.session_state['modo_red_value'] = "Localhost"
+        
         modo_red = st.radio(
             "Modo de conexión:",
             ["Localhost", "IP Personalizada"],
+            index=0 if st.session_state['modo_red_value'] == "Localhost" else 1,
             help="Selecciona cómo conectarte a la API FastAPI",
             key="modo_red_sidebar"
         )
+        
+        # Actualizar el modo en session_state
+        st.session_state['modo_red_value'] = modo_red
         
         if modo_red == "Localhost":
             api_url = "localhost:8000"
             st.info("📍 API: localhost:8000\n💡 Se probará HTTP y HTTPS automáticamente")
         else:  # IP Personalizada
-            # Sugerir la IP local como valor por defecto (solo IP:PUERTO)
-            try:
-                hostname = socket.gethostname()
-                local_ip = socket.gethostbyname(hostname)
-                default_ip = f"{local_ip}:8000"
-            except:
-                default_ip = "192.168.1.100:8000"
-            
+            # Usar el valor guardado en session_state
             custom_ip = st.text_input(
                 "Dirección de la API:",
-                value=default_ip,
+                value=st.session_state['custom_ip_value'],
                 placeholder="IP:PUERTO (ej: 192.168.1.100:8000)",
                 help="Introduce solo la IP y puerto. La app probará HTTP y HTTPS automáticamente",
                 key="custom_ip_sidebar"
             )
+            # Guardar el valor en session_state para persistencia
+            if custom_ip and custom_ip.strip():
+                st.session_state['custom_ip_value'] = custom_ip.strip()
             # Limpiar y usar la IP ingresada
             api_url = custom_ip.strip() if custom_ip else "localhost:8000"
             st.info(f"📍 API: {api_url}\n💡 Se probará HTTP y HTTPS automáticamente")

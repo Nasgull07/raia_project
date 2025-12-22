@@ -10,7 +10,7 @@ import streamlit as st
 from langdetect import detect, DetectorFactory
 import hashlib
 from utils.sidebar_common import render_sidebar
-from utils.api_utils import verificar_api, reconocer_texto_api
+from utils.api_utils import reconocer_texto_api
 
 # Añadir directorio raíz del proyecto al path
 project_root = Path(__file__).resolve().parent.parent
@@ -325,13 +325,9 @@ def main():
     
     st.markdown("---")
     
-    # Verificar que la API esté disponible
-    api_ok = verificar_api()
-    if not api_ok:
-        st.error("⚠️ La API FastAPI no está disponible. Inicia el servidor para continuar.")
-        st.code("cd FastAPI && python main.py", language="bash")
-        st.info("💡 La aplicación ahora usa FastAPI para todas las predicciones")
-        st.stop()
+    # NOTA: La verificación de API ahora solo se hace:
+    # 1. Manualmente con el botón "Verificar Conexión" en el sidebar
+    # 2. Si la imagen NO está en caché y se necesita hacer una petición real
     
     # Tabs para diferentes modos
     tab1, tab2, tab3 = st.tabs(["📝 Escribir Texto", "📷 Subir Imagen", "📁 Explorador de Archivos"])
