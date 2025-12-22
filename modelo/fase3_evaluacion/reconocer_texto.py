@@ -68,7 +68,8 @@ def reconocer_texto(image_path: Path):
     # Segmentar
     print("[INFO] Segmentando letras...")
     segmenter = SimpleImageSegmenter()
-    letras_segmentadas = segmenter.segment_word(img_array)
+    # Cambiar segment_word por segment_image para segmentar líneas y luego caracteres
+    letras_segmentadas = segmenter.segment_image(img_array)
     
     if not letras_segmentadas:
         print("[ERROR] No se detectaron letras")
@@ -82,32 +83,37 @@ def reconocer_texto(image_path: Path):
     texto_reconocido = []
     confidencias = []
     
-    for i, letra_img in enumerate(letras_segmentadas):
-        # Asegurar 28x28
-        if letra_img.shape != (28, 28):
-            img_pil = Image.fromarray(letra_img.astype(np.uint8))
-            img_pil = img_pil.resize((28, 28), Image.LANCZOS)
-            letra_img = np.array(img_pil)
-        
-        # INVERTIR COLORES
-        letra_img = 255 - letra_img
-        
-        # Aplanar y normalizar
-        letra_flat = letra_img.flatten().reshape(1, -1)
-        letra_scaled = scaler.transform(letra_flat)
-        
-        # Predecir
-        pred = model.predict(letra_scaled)[0]
-        proba = model.predict_proba(letra_scaled)[0]
-        
-        letra = label_mapping[pred]
-        pred_idx = np.where(model.classes_ == pred)[0][0]
-        confianza = proba[pred_idx]
-        
-        texto_reconocido.append(letra)
-        confidencias.append(confianza)
-        
-        print(f"   Letra {i+1}: '{letra}' ({confianza*100:.1f}%)")
+    # Iterar sobre líneas y luego sobre caracteres
+    for linea in letras_segmentadas:
+        for letra_img in linea:
+            if letra_img.shape != (28, 28):
+                print("[ERROR] Dimensión incorrecta en letra segmentada")
+                continue
+            # Asegurar 28x28
+            if letra_img.shape != (28, 28):
+                img_pil = Image.fromarray(letra_img.astype(np.uint8))
+                img_pil = img_pil.resize((28, 28), Image.LANCZOS)
+                letra_img = np.array(img_pil)
+            
+            # INVERTIR COLORES
+            letra_img = 255 - letra_img
+            
+            # Aplanar y normalizar
+            letra_flat = letra_img.flatten().reshape(1, -1)
+            letra_scaled = scaler.transform(letra_flat)
+            
+            # Predecir
+            pred = model.predict(letra_scaled)[0]
+            proba = model.predict_proba(letra_scaled)[0]
+            
+            letra = label_mapping[pred]
+            pred_idx = np.where(model.classes_ == pred)[0][0]
+            confianza = proba[pred_idx]
+            
+            texto_reconocido.append(letra)
+            confidencias.append(confianza)
+            
+            print(f"   Letra {len(texto_reconocido)}: '{letra}' ({confianza*100:.1f}%)")
     
     # Resultado final
     # Reconstruir texto, reemplazando 'ESPACIO' por ' '
